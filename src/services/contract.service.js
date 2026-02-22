@@ -3,29 +3,39 @@
  *
  * Business logic for contract CRUD, versioning, pagination,
  * and full-text search. Enforces plan limits and org isolation.
+ *
+ * Key behaviors:
+ *   - Every contract belongs to exactly one org (multi-tenant isolation)
+ *   - Contract storage limit is enforced by subscription plan
+ *   - Version history is embedded in the contract document
+ *   - Soft delete preserves the audit trail
+ *   - Full-text search uses MongoDB's $text index with weighted scoring
  */
 
-const Contract = require('../models/Contract.model');
-const Organization = require('../models/Organization.model');
-const { hashContent } = require('../utils/hashHelper');
-const { extractText } = require('../utils/textExtractor');
-const { buildPaginationMeta } = require('../utils/apiResponse');
-const { getPlanLimits } = require('../constants/plans');
-const auditService = require('./audit.service');
+import Contract from '../models/Contract.model.js';
+import Organization from '../models/Organization.model.js';
+import { hashContent } from '../utils/hashHelper.js';
+import { extractText } from '../utils/textExtractor.js';
+import { buildPaginationMeta } from '../utils/apiResponse.js';
+import { getPlanLimits } from '../constants/plans.js';
+import * as auditService from './audit.service.js';
+import AppError from '../utils/AppError.js';
 
 /**
  * Upload a new contract. Extracts text from file or accepts raw text.
+ * Checks plan limits before creating the contract.
  */
-async function createContract({ orgId, userId, title, type, tags, content, file }) {
-    // Check contract storage limit
+export async function createContract({ orgId, userId, title, type, tags, content, file }) {
+    // Check contract storage limit for the org's plan
     const org = await Organization.findById(orgId);
     const planLimits = getPlanLimits(org.plan);
 
     if (planLimits.maxContracts !== Infinity && org.contractCount >= planLimits.maxContracts) {
-        const error = new Error(`Your ${org.plan} plan allows a maximum of ${planLimits.maxContracts} contracts. Upgrade your plan.`);
-        error.statusCode = 403;
-        error.code = 'PLAN_LIMIT';
-        throw error;
+        throw new AppError(
+            `Your ${org.plan} plan allows a maximum of ${planLimits.maxContracts} contracts. Upgrade your plan.`,
+            403,
+            'PLAN_LIMIT'
+        );
     }
 
     // Extract text from file if provided, otherwise use raw content
@@ -39,16 +49,19 @@ async function createContract({ orgId, userId, title, type, tags, content, file 
         mimeType = file.mimetype;
     }
 
+    // Guard: ensure we have meaningful content to analyze
     if (!contractText || contractText.trim().length < 50) {
-        const error = new Error('Contract content is too short. Provide at least 50 characters of text.');
-        error.statusCode = 400;
-        error.code = 'CONTENT_TOO_SHORT';
-        throw error;
+        throw new AppError(
+            'Contract content is too short. Provide at least 50 characters of text.',
+            400,
+            'CONTENT_TOO_SHORT'
+        );
     }
 
+    // Hash for cache/dedup — same content produces the same hash
     const contentHash = hashContent(contractText);
 
-    // Parse tags if they came as a comma-separated string
+    // Parse tags if they came as a comma-separated string from the form
     let parsedTags = tags;
     if (typeof tags === 'string') {
         parsedTags = tags.split(',').map((t) => t.trim().toLowerCase()).filter(Boolean);
@@ -74,10 +87,10 @@ async function createContract({ orgId, userId, title, type, tags, content, file 
         currentVersion: 1,
     });
 
-    // Increment org contract count
+    // Increment the org's contract count for future plan limit checks
     await Organization.findByIdAndUpdate(orgId, { $inc: { contractCount: 1 } });
 
-    // Audit log
+    // Record in audit trail
     await auditService.log({
         orgId,
         userId,
@@ -92,10 +105,12 @@ async function createContract({ orgId, userId, title, type, tags, content, file 
 
 /**
  * List contracts with pagination, filtering, and full-text search.
+ * Excludes heavy fields (content, versions) from list view for performance.
  */
-async function listContracts(orgId, query = {}) {
+export async function listContracts(orgId, query = {}) {
     const { page = 1, limit = 10, sortBy = 'createdAt', order = 'desc', type, tag, search } = query;
 
+    // Base filter: org-scoped and not soft-deleted
     const filter = { orgId, isDeleted: false };
 
     if (type) filter.type = type;
@@ -109,7 +124,7 @@ async function listContracts(orgId, query = {}) {
     const sortOrder = order === 'asc' ? 1 : -1;
     const sortOptions = {};
 
-    // If searching, sort by text score relevance first
+    // When searching, sort by text relevance score first
     if (search) {
         sortOptions.score = { $meta: 'textScore' };
     }
@@ -134,8 +149,9 @@ async function listContracts(orgId, query = {}) {
 
 /**
  * Get a single contract by ID with full details.
+ * Enforces org isolation — can't access contracts from other orgs.
  */
-async function getContractById(contractId, orgId) {
+export async function getContractById(contractId, orgId) {
     const contract = await Contract.findOne({
         _id: contractId,
         orgId,
@@ -143,10 +159,7 @@ async function getContractById(contractId, orgId) {
     }).lean();
 
     if (!contract) {
-        const error = new Error('Contract not found.');
-        error.statusCode = 404;
-        error.code = 'NOT_FOUND';
-        throw error;
+        throw new AppError('Contract not found.', 404, 'NOT_FOUND');
     }
 
     return contract;
@@ -154,8 +167,9 @@ async function getContractById(contractId, orgId) {
 
 /**
  * Update contract metadata (title, tags, alert config).
+ * Does NOT update content — use addVersion for content changes.
  */
-async function updateContract(contractId, orgId, updates) {
+export async function updateContract(contractId, orgId, updates) {
     const contract = await Contract.findOneAndUpdate(
         { _id: contractId, orgId, isDeleted: false },
         { $set: updates },
@@ -163,9 +177,7 @@ async function updateContract(contractId, orgId, updates) {
     );
 
     if (!contract) {
-        const error = new Error('Contract not found.');
-        error.statusCode = 404;
-        throw error;
+        throw new AppError('Contract not found.', 404, 'NOT_FOUND');
     }
 
     return contract;
@@ -173,19 +185,19 @@ async function updateContract(contractId, orgId, updates) {
 
 /**
  * Upload a new version of an existing contract.
+ * Increments the version number and updates the current content/hash.
  */
-async function addVersion(contractId, orgId, userId, { content, changeNote }) {
+export async function addVersion(contractId, orgId, userId, { content, changeNote }) {
     const contract = await Contract.findOne({ _id: contractId, orgId, isDeleted: false });
 
     if (!contract) {
-        const error = new Error('Contract not found.');
-        error.statusCode = 404;
-        throw error;
+        throw new AppError('Contract not found.', 404, 'NOT_FOUND');
     }
 
     const newVersion = contract.currentVersion + 1;
     const contentHash = hashContent(content);
 
+    // Push new version onto the embedded array
     contract.versions.push({
         versionNumber: newVersion,
         content,
@@ -195,6 +207,7 @@ async function addVersion(contractId, orgId, userId, { content, changeNote }) {
         changeNote,
     });
 
+    // Update the "current" snapshot
     contract.content = content;
     contract.contentHash = contentHash;
     contract.currentVersion = newVersion;
@@ -213,19 +226,18 @@ async function addVersion(contractId, orgId, userId, { content, changeNote }) {
 }
 
 /**
- * Get version history for a contract.
+ * Get version history for a contract (metadata only, no content).
  */
-async function getVersions(contractId, orgId) {
+export async function getVersions(contractId, orgId) {
     const contract = await Contract.findOne({ _id: contractId, orgId, isDeleted: false })
         .select('versions currentVersion title')
         .lean();
 
     if (!contract) {
-        const error = new Error('Contract not found.');
-        error.statusCode = 404;
-        throw error;
+        throw new AppError('Contract not found.', 404, 'NOT_FOUND');
     }
 
+    // Return version metadata without the full content to keep the response light
     return contract.versions.map((v) => ({
         versionNumber: v.versionNumber,
         uploadedAt: v.uploadedAt,
@@ -236,8 +248,10 @@ async function getVersions(contractId, orgId) {
 
 /**
  * Soft delete a contract.
+ * Preserves the document for audit trail — just sets isDeleted flag.
+ * Also decrements the org's contract count.
  */
-async function deleteContract(contractId, orgId, userId) {
+export async function deleteContract(contractId, orgId, userId) {
     const contract = await Contract.findOneAndUpdate(
         { _id: contractId, orgId, isDeleted: false },
         { isDeleted: true, deletedAt: new Date(), deletedBy: userId },
@@ -245,11 +259,10 @@ async function deleteContract(contractId, orgId, userId) {
     );
 
     if (!contract) {
-        const error = new Error('Contract not found.');
-        error.statusCode = 404;
-        throw error;
+        throw new AppError('Contract not found.', 404, 'NOT_FOUND');
     }
 
+    // Decrement the cached contract count
     await Organization.findByIdAndUpdate(orgId, { $inc: { contractCount: -1 } });
 
     await auditService.log({
@@ -262,13 +275,3 @@ async function deleteContract(contractId, orgId, userId) {
 
     return contract;
 }
-
-module.exports = {
-    createContract,
-    listContracts,
-    getContractById,
-    updateContract,
-    addVersion,
-    getVersions,
-    deleteContract,
-};

@@ -1,16 +1,11 @@
 /**
- * Analysis Validators
- * Joi schemas for analysis request endpoints.
+ * Analysis Validators — Joi schemas for analysis endpoints.
  */
 
-const Joi = require('joi');
+import Joi from 'joi';
 
-const requestAnalysis = Joi.object({
+export const requestAnalysis = Joi.object({
     contractId: Joi.string().hex().length(24).required()
         .messages({ 'any.required': 'contractId is required' }),
     version: Joi.number().integer().min(1).optional().default(null),
 });
-
-module.exports = {
-    requestAnalysis,
-};

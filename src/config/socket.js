@@ -4,28 +4,36 @@
  * Sets up the Socket.io server with:
  *   - JWT authentication on connection handshake
  *   - Room-based architecture (org rooms, user rooms, admin room)
- *   - Redis adapter for multi-instance support
+ *   - Redis adapter for multi-instance horizontal scaling
  *
- * The actual Pub/Sub subscriber that bridges worker events → Socket.io
+ * Room architecture:
+ *   - `user:<userId>` — personal notifications (analysis complete, etc.)
+ *   - `org:<orgId>` — org-wide events (contract expiring, etc.)
+ *   - `admin` — platform-wide admin events
+ *
+ * The Pub/Sub subscriber that bridges worker events → Socket.io
  * lives in src/sockets/pubsub.subscriber.js and is wired up in server.js.
  */
 
-const { Server } = require('socket.io');
-const jwt = require('jsonwebtoken');
-const { createAdapter } = require('@socket.io/redis-adapter');
-const logger = require('../utils/logger');
+import { Server } from 'socket.io';
+import jwt from 'jsonwebtoken';
+import { createAdapter } from '@socket.io/redis-adapter';
+import logger from '../utils/logger.js';
 
+// Module-level reference to the Socket.io server instance
 let io = null;
 
 /**
  * Initialize Socket.io on an HTTP server.
- * @param {http.Server} httpServer
+ *
+ * @param {import('http').Server} httpServer - Node.js HTTP server
  * @param {object} env - Validated environment config
- * @param {import('ioredis').Redis} pubClient - Redis command client
- * @param {import('ioredis').Redis} subClient - Redis subscriber client (a duplicate for socket adapter)
+ * @param {import('ioredis').Redis} pubClient - Redis client for adapter publishing
+ * @param {import('ioredis').Redis} subClient - Redis client for adapter subscribing
  * @returns {Server} Socket.io server instance
  */
-function initSocket(httpServer, env, pubClient, subClient) {
+export function initSocket(httpServer, env, pubClient, subClient) {
+    // Parse CORS origins from env — same origins allowed for HTTP and WebSocket
     const allowedOrigins = env.ALLOWED_ORIGINS.split(',').map((o) => o.trim());
 
     io = new Server(httpServer, {
@@ -34,15 +42,17 @@ function initSocket(httpServer, env, pubClient, subClient) {
             methods: ['GET', 'POST'],
             credentials: true,
         },
-        transports: ['websocket', 'polling'],
-        pingInterval: 25000,
-        pingTimeout: 60000,
+        transports: ['websocket', 'polling'], // Prefer WebSocket, fall back to polling
+        pingInterval: 25000,  // How often to ping clients (ms)
+        pingTimeout: 60000,   // How long to wait for pong before disconnecting
     });
 
-    // Redis adapter so Socket.io works across multiple Node instances
+    // Redis adapter — allows Socket.io to work across multiple Node instances
+    // Each instance publishes events to Redis, all instances receive them
     io.adapter(createAdapter(pubClient, subClient));
 
-    // JWT authentication middleware — runs on every connection attempt
+    // ─── JWT Authentication Middleware ──────────────────────────
+    // Runs once per connection attempt — rejects unauthenticated clients
     io.use((socket, next) => {
         const token = socket.handshake.auth?.token;
 
@@ -50,11 +60,13 @@ function initSocket(httpServer, env, pubClient, subClient) {
             return next(new Error('Authentication required — provide token in auth.token'));
         }
 
-        // Strip "Bearer " prefix if present
+        // Support both raw tokens and "Bearer <token>" format
         const raw = token.startsWith('Bearer ') ? token.slice(7) : token;
 
         try {
             const decoded = jwt.verify(raw, env.JWT_ACCESS_SECRET);
+
+            // Attach user identity to the socket for use in event handlers
             socket.userId = decoded.userId;
             socket.orgId = decoded.orgId;
             socket.role = decoded.role;
@@ -65,14 +77,14 @@ function initSocket(httpServer, env, pubClient, subClient) {
         }
     });
 
-    // Connection handler — join rooms based on user identity
+    // ─── Connection Handler ────────────────────────────────────
     io.on('connection', (socket) => {
         logger.info(`Socket connected: ${socket.id} (user: ${socket.userId})`);
 
-        // Auto-join the user's personal room
+        // Auto-join the user's personal room — used for direct notifications
         socket.join(`user:${socket.userId}`);
 
-        // Join org room when requested
+        // Join org room on request — used for org-wide broadcasts
         socket.on('join:org', ({ orgId }) => {
             if (orgId) {
                 socket.join(`org:${orgId}`);
@@ -80,7 +92,7 @@ function initSocket(httpServer, env, pubClient, subClient) {
             }
         });
 
-        // Admin room (only for admin users)
+        // Admin users automatically join the admin room for platform-wide events
         if (socket.role === 'admin') {
             socket.join('admin');
         }
@@ -100,11 +112,11 @@ function initSocket(httpServer, env, pubClient, subClient) {
 
 /**
  * Get the Socket.io server instance.
- * @returns {Server}
+ * Throws if called before initSocket() — catches init-order bugs.
+ *
+ * @returns {Server} Socket.io server instance
  */
-function getIO() {
+export function getIO() {
     if (!io) throw new Error('Socket.io not initialized. Call initSocket() first.');
     return io;
 }
-
-module.exports = { initSocket, getIO };

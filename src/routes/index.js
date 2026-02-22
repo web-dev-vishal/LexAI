@@ -3,14 +3,14 @@
  * Mounts all route modules under their respective prefixes.
  */
 
-const { Router } = require('express');
+import { Router } from 'express';
 
-const authRoutes = require('./auth.routes');
-const userRoutes = require('./user.routes');
-const orgRoutes = require('./org.routes');
-const contractRoutes = require('./contract.routes');
-const analysisRoutes = require('./analysis.routes');
-const adminRoutes = require('./admin.routes');
+import authRoutes from './auth.routes.js';
+import userRoutes from './user.routes.js';
+import orgRoutes from './org.routes.js';
+import contractRoutes from './contract.routes.js';
+import analysisRoutes from './analysis.routes.js';
+import adminRoutes from './admin.routes.js';
 
 const router = Router();
 
@@ -21,4 +21,4 @@ router.use('/contracts', contractRoutes);
 router.use('/analyses', analysisRoutes);
 router.use('/admin', adminRoutes);
 
-module.exports = router;
+export default router;

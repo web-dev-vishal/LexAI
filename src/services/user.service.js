@@ -1,43 +1,41 @@
 /**
  * User Service
- * Business logic for user profile operations.
+ *
+ * Business logic for user profile operations:
+ *   - Get profile with quota info
+ *   - Update profile (name only — email changes require verification)
+ *   - Change password (requires current password)
+ *   - Admin user lookup
  */
 
-const User = require('../models/User.model');
-const Organization = require('../models/Organization.model');
-const { getRedisClient } = require('../config/redis');
-const { getCurrentMonthKey, getQuotaResetDate } = require('../utils/dateHelper');
-const { getPlanLimits } = require('../constants/plans');
+import User from '../models/User.model.js';
+import { getRedisClient } from '../config/redis.js';
+import { getCurrentMonthKey, getQuotaResetDate } from '../utils/dateHelper.js';
+import { getPlanLimits } from '../constants/plans.js';
+import AppError from '../utils/AppError.js';
 
 /**
  * Get the current user's profile with quota information.
  */
-async function getUserProfile(userId) {
+export async function getUserProfile(userId) {
     const user = await User.findById(userId)
         .populate('organization', 'name plan')
         .lean();
 
     if (!user) {
-        const error = new Error('User not found.');
-        error.statusCode = 404;
-        error.code = 'NOT_FOUND';
-        throw error;
+        throw new AppError('User not found.', 404, 'NOT_FOUND');
     }
 
-    // Build quota info
     const quota = await getUserQuota(userId, user.organization?.plan);
 
-    return {
-        ...user,
-        id: user._id,
-        quota,
-    };
+    return { ...user, id: user._id, quota };
 }
 
 /**
  * Update the current user's profile.
+ * Only 'name' is allowed — prevents changing email/role via this endpoint.
  */
-async function updateUserProfile(userId, updates) {
+export async function updateUserProfile(userId, updates) {
     const allowedFields = ['name'];
     const sanitized = {};
     for (const field of allowedFields) {
@@ -52,10 +50,7 @@ async function updateUserProfile(userId, updates) {
     });
 
     if (!user) {
-        const error = new Error('User not found.');
-        error.statusCode = 404;
-        error.code = 'NOT_FOUND';
-        throw error;
+        throw new AppError('User not found.', 404, 'NOT_FOUND');
     }
 
     return user;
@@ -63,22 +58,18 @@ async function updateUserProfile(userId, updates) {
 
 /**
  * Change the current user's password.
+ * Requires the current password for verification — prevents session hijacking.
  */
-async function changePassword(userId, currentPassword, newPassword) {
+export async function changePassword(userId, currentPassword, newPassword) {
     const user = await User.findById(userId).select('+password');
 
     if (!user) {
-        const error = new Error('User not found.');
-        error.statusCode = 404;
-        throw error;
+        throw new AppError('User not found.', 404, 'NOT_FOUND');
     }
 
     const isMatch = await user.comparePassword(currentPassword);
     if (!isMatch) {
-        const error = new Error('Current password is incorrect.');
-        error.statusCode = 400;
-        error.code = 'INVALID_PASSWORD';
-        throw error;
+        throw new AppError('Current password is incorrect.', 400, 'INVALID_PASSWORD');
     }
 
     user.password = newPassword;
@@ -109,20 +100,10 @@ async function getUserQuota(userId, plan) {
 /**
  * Get user by ID (admin use).
  */
-async function getUserById(userId) {
+export async function getUserById(userId) {
     const user = await User.findById(userId).populate('organization', 'name plan').lean();
     if (!user) {
-        const error = new Error('User not found.');
-        error.statusCode = 404;
-        throw error;
+        throw new AppError('User not found.', 404, 'NOT_FOUND');
     }
     return user;
 }
-
-module.exports = {
-    getUserProfile,
-    updateUserProfile,
-    changePassword,
-    getUserQuota,
-    getUserById,
-};

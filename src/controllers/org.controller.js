@@ -3,16 +3,14 @@
  * Org creation, member management, and invitation handling.
  */
 
-const orgService = require('../services/org.service');
-const invitationService = require('../services/invitation.service');
-const { sendSuccess } = require('../utils/apiResponse');
-const HTTP = require('../constants/httpStatus');
-const auditService = require('../services/audit.service');
+import * as orgService from '../services/org.service.js';
+import * as invitationService from '../services/invitation.service.js';
+import { sendSuccess } from '../utils/apiResponse.js';
+import HTTP from '../constants/httpStatus.js';
+import * as auditService from '../services/audit.service.js';
 
-/**
- * POST /orgs
- */
-async function createOrg(req, res) {
+/** POST /orgs */
+export async function createOrg(req, res) {
     const org = await orgService.createOrganization(req.user.userId, req.body);
 
     await auditService.log({
@@ -27,48 +25,26 @@ async function createOrg(req, res) {
     sendSuccess(res, {
         statusCode: HTTP.CREATED,
         data: {
-            org: {
-                id: org._id,
-                name: org.name,
-                slug: org.slug,
-                plan: org.plan,
-                memberCount: org.members.length,
-            },
+            org: { id: org._id, name: org.name, slug: org.slug, plan: org.plan, memberCount: org.members.length },
         },
     });
 }
 
-/**
- * GET /orgs/:orgId
- */
-async function getOrg(req, res) {
+/** GET /orgs/:orgId */
+export async function getOrg(req, res) {
     const org = await orgService.getOrganization(req.params.orgId, req.user.userId);
-
-    sendSuccess(res, {
-        data: { org },
-    });
+    sendSuccess(res, { data: { org } });
 }
 
-/**
- * PATCH /orgs/:orgId
- */
-async function updateOrg(req, res) {
+/** PATCH /orgs/:orgId */
+export async function updateOrg(req, res) {
     const org = await orgService.updateOrganization(req.params.orgId, req.user.userId, req.body);
-
-    sendSuccess(res, {
-        data: { org },
-    });
+    sendSuccess(res, { data: { org } });
 }
 
-/**
- * POST /orgs/:orgId/invite
- */
-async function inviteMember(req, res) {
-    const invitation = await invitationService.createInvitation(
-        req.params.orgId,
-        req.user.userId,
-        req.body
-    );
+/** POST /orgs/:orgId/invite */
+export async function inviteMember(req, res) {
+    const invitation = await invitationService.createInvitation(req.params.orgId, req.user.userId, req.body);
 
     await auditService.log({
         orgId: req.params.orgId,
@@ -82,50 +58,25 @@ async function inviteMember(req, res) {
 
     sendSuccess(res, {
         message: `Invitation sent to ${req.body.email}`,
-        data: {
-            invitationId: invitation._id,
-            expiresAt: invitation.expiresAt,
-        },
+        data: { invitationId: invitation._id, expiresAt: invitation.expiresAt },
     });
 }
 
-/**
- * POST /orgs/:orgId/invite/accept
- */
-async function acceptInvite(req, res) {
+/** POST /orgs/:orgId/invite/accept */
+export async function acceptInvite(req, res) {
     const result = await invitationService.acceptInvitation(req.params.orgId, req.body);
-
-    sendSuccess(res, {
-        message: 'Invitation accepted. Your account has been created.',
-        data: result,
-    });
+    sendSuccess(res, { message: 'Invitation accepted. Your account has been created.', data: result });
 }
 
-/**
- * PATCH /orgs/:orgId/members/:userId/role
- */
-async function changeMemberRole(req, res) {
-    await orgService.changeMemberRole(
-        req.params.orgId,
-        req.params.userId,
-        req.body.role,
-        req.user.userId
-    );
-
-    sendSuccess(res, {
-        message: 'Member role updated successfully.',
-    });
+/** PATCH /orgs/:orgId/members/:userId/role */
+export async function changeMemberRole(req, res) {
+    await orgService.changeMemberRole(req.params.orgId, req.params.userId, req.body.role, req.user.userId);
+    sendSuccess(res, { message: 'Member role updated successfully.' });
 }
 
-/**
- * DELETE /orgs/:orgId/members/:userId
- */
-async function removeMember(req, res) {
-    await orgService.removeMember(
-        req.params.orgId,
-        req.params.userId,
-        req.user.userId
-    );
+/** DELETE /orgs/:orgId/members/:userId */
+export async function removeMember(req, res) {
+    await orgService.removeMember(req.params.orgId, req.params.userId, req.user.userId);
 
     await auditService.log({
         orgId: req.params.orgId,
@@ -136,17 +87,5 @@ async function removeMember(req, res) {
         ipAddress: req.ip,
     });
 
-    sendSuccess(res, {
-        message: 'Member removed from organization.',
-    });
+    sendSuccess(res, { message: 'Member removed from organization.' });
 }
-
-module.exports = {
-    createOrg,
-    getOrg,
-    updateOrg,
-    inviteMember,
-    acceptInvite,
-    changeMemberRole,
-    removeMember,
-};

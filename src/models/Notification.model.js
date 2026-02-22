@@ -2,11 +2,14 @@
  * Notification Model
  *
  * Logs every notification sent (socket and email) for auditing
- * and deduplication. The alert engine checks this before sending
- * duplicate expiry reminders.
+ * and deduplication. The alert engine checks this collection before
+ * sending duplicate expiry reminders.
+ *
+ * Also serves as an in-app notification feed — the `read` flag
+ * lets the frontend show unread notification badges.
  */
 
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
 const notificationSchema = new mongoose.Schema(
     {
@@ -18,6 +21,7 @@ const notificationSchema = new mongoose.Schema(
         userId: {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'User',
+            // Optional — some notifications are org-wide (e.g., contract expiring)
         },
         type: {
             type: String,
@@ -27,13 +31,13 @@ const notificationSchema = new mongoose.Schema(
         channel: {
             type: String,
             enum: ['socket', 'email', 'both'],
-            default: 'both',
+            default: 'both',  // Most notifications go out via both channels
         },
-        resourceType: String,
+        resourceType: String,                      // e.g., 'Contract', 'Analysis'
         resourceId: mongoose.Schema.Types.ObjectId,
-        message: String,
-        metadata: mongoose.Schema.Types.Mixed,
-        read: { type: Boolean, default: false },
+        message: String,                            // Human-readable notification text
+        metadata: mongoose.Schema.Types.Mixed,      // Extra context (expiry date, risk score, etc.)
+        read: { type: Boolean, default: false },    // Unread by default — frontend marks as read
     },
     {
         timestamps: true,
@@ -48,9 +52,10 @@ const notificationSchema = new mongoose.Schema(
     }
 );
 
-notificationSchema.index({ orgId: 1, createdAt: -1 });
-notificationSchema.index({ userId: 1, read: 1 });
+// ─── Indexes ──────────────────────────────────────────────────────
+notificationSchema.index({ orgId: 1, createdAt: -1 });  // Org notification feed
+notificationSchema.index({ userId: 1, read: 1 });       // User's unread notifications
 
 const Notification = mongoose.model('Notification', notificationSchema);
 
-module.exports = Notification;
+export default Notification;

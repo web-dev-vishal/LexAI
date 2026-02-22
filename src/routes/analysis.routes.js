@@ -1,14 +1,12 @@
-/**
- * Analysis Routes
- */
+/** Analysis Routes */
 
-const { Router } = require('express');
-const analysisController = require('../controllers/analysis.controller');
-const { authenticate } = require('../middleware/auth.middleware');
-const { checkQuota } = require('../middleware/quota.middleware');
-const { validate } = require('../middleware/validate.middleware');
-const analysisValidator = require('../validators/analysis.validator');
-const asyncWrapper = require('../utils/asyncWrapper');
+import { Router } from 'express';
+import * as analysisController from '../controllers/analysis.controller.js';
+import { authenticate } from '../middleware/auth.middleware.js';
+import { checkQuota } from '../middleware/quota.middleware.js';
+import { validate } from '../middleware/validate.middleware.js';
+import * as analysisValidator from '../validators/analysis.validator.js';
+import { asyncWrapper } from '../utils/asyncWrapper.js';
 
 const router = Router();
 
@@ -16,4 +14,4 @@ router.post('/', authenticate, checkQuota, validate(analysisValidator.requestAna
 router.get('/:id', authenticate, asyncWrapper(analysisController.getAnalysis));
 router.get('/contract/:contractId', authenticate, asyncWrapper(analysisController.getAnalysesByContract));
 
-module.exports = router;
+export default router;

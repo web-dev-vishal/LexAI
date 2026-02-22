@@ -8,66 +8,69 @@
  *   - Contract expiry alerts
  *
  * In development, uses Ethereal Email (free SMTP test inbox).
+ * Transporter is lazily initialized on first email send.
  */
 
-const nodemailer = require('nodemailer');
-const logger = require('../utils/logger');
+import nodemailer from 'nodemailer';
+import logger from '../utils/logger.js';
 
+// Module-level transporter — initialized once, reused for all emails
 let transporter = null;
 
 /**
- * Initialize the email transporter. Called once during app startup.
+ * Initialize the email transporter. Called once on first email send.
+ * Uses SMTP config from environment variables.
  */
 function initEmailTransporter() {
-    transporter = nodemailer.createTransport({
-        host: process.env.SMTP_HOST,
-        port: parseInt(process.env.SMTP_PORT) || 587,
-        secure: false, // true for 465
-        auth: {
-            user: process.env.SMTP_USER,
-            pass: process.env.SMTP_PASS,
-        },
-    });
+  transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: parseInt(process.env.SMTP_PORT) || 587,
+    secure: false, // true for port 465 (SSL), false for 587 (STARTTLS)
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+    },
+  });
 
-    logger.info('✅ Email transporter initialized');
+  logger.info('✅ Email transporter initialized');
 }
 
 /**
- * Send an email.
+ * Send an email. Lazily initializes the transporter if not already done.
  */
 async function sendEmail({ to, subject, html, text }) {
-    if (!transporter) initEmailTransporter();
+  if (!transporter) initEmailTransporter();
 
-    const info = await transporter.sendMail({
-        from: process.env.EMAIL_FROM || 'noreply@lexai.io',
-        to,
-        subject,
-        html,
-        text,
-    });
+  const info = await transporter.sendMail({
+    from: process.env.EMAIL_FROM || 'noreply@lexai.io',
+    to,
+    subject,
+    html,
+    text,
+  });
 
-    // In dev with Ethereal, log the preview URL
-    if (process.env.NODE_ENV !== 'production') {
-        const previewUrl = nodemailer.getTestMessageUrl(info);
-        if (previewUrl) {
-            logger.info(`📧 Email preview: ${previewUrl}`);
-        }
+  // In dev with Ethereal, log the preview URL for easy testing
+  if (process.env.NODE_ENV !== 'production') {
+    const previewUrl = nodemailer.getTestMessageUrl(info);
+    if (previewUrl) {
+      logger.info(`📧 Email preview: ${previewUrl}`);
     }
+  }
 
-    logger.debug(`Email sent to ${to}: ${subject}`);
-    return info;
+  logger.debug(`Email sent to ${to}: ${subject}`);
+  return info;
 }
 
 /**
- * Send email verification link.
+ * Send email verification link to a newly registered user.
  */
-async function sendVerificationEmail(email, token) {
-    const verifyUrl = `${process.env.ALLOWED_ORIGINS?.split(',')[0] || 'http://localhost:3000'}/verify-email?token=${token}`;
+export async function sendVerificationEmail(email, token) {
+  const verifyUrl = `${process.env.ALLOWED_ORIGINS?.split(',')[0] || 'http://localhost:3000'}/verify-email?token=${token}`;
 
-    return sendEmail({
-        to: email,
-        subject: 'LexAI — Verify Your Email Address',
-        html: `
+  return sendEmail({
+    to: email,
+    subject: 'LexAI — Verify Your Email Address',
+    html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <h2 style="color: #2563eb;">Welcome to LexAI!</h2>
         <p>Thank you for registering. Please verify your email address to get started:</p>
@@ -76,20 +79,20 @@ async function sendVerificationEmail(email, token) {
         <p style="color: #9ca3af; font-size: 12px;">If you didn't register for LexAI, you can safely ignore this email.</p>
       </div>
     `,
-        text: `Welcome to LexAI! Verify your email by using this token: ${token}`,
-    });
+    text: `Welcome to LexAI! Verify your email by using this token: ${token}`,
+  });
 }
 
 /**
- * Send password reset link.
+ * Send password reset link with 1-hour expiry.
  */
-async function sendPasswordResetEmail(email, token) {
-    const resetUrl = `${process.env.ALLOWED_ORIGINS?.split(',')[0] || 'http://localhost:3000'}/reset-password?token=${token}`;
+export async function sendPasswordResetEmail(email, token) {
+  const resetUrl = `${process.env.ALLOWED_ORIGINS?.split(',')[0] || 'http://localhost:3000'}/reset-password?token=${token}`;
 
-    return sendEmail({
-        to: email,
-        subject: 'LexAI — Reset Your Password',
-        html: `
+  return sendEmail({
+    to: email,
+    subject: 'LexAI — Reset Your Password',
+    html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <h2 style="color: #2563eb;">Password Reset</h2>
         <p>You requested a password reset. Click the link below (valid for 1 hour):</p>
@@ -98,20 +101,20 @@ async function sendPasswordResetEmail(email, token) {
         <p style="color: #9ca3af; font-size: 12px;">If you didn't request this, ignore this email. Your password will remain unchanged.</p>
       </div>
     `,
-        text: `Reset your password using this token (valid for 1 hour): ${token}`,
-    });
+    text: `Reset your password using this token (valid for 1 hour): ${token}`,
+  });
 }
 
 /**
- * Send team invitation email.
+ * Send team invitation email with accept link.
  */
-async function sendInvitationEmail(email, { token, orgName, role, expiresAt }) {
-    const acceptUrl = `${process.env.ALLOWED_ORIGINS?.split(',')[0] || 'http://localhost:3000'}/accept-invite?token=${token}`;
+export async function sendInvitationEmail(email, { token, orgName, role, expiresAt }) {
+  const acceptUrl = `${process.env.ALLOWED_ORIGINS?.split(',')[0] || 'http://localhost:3000'}/accept-invite?token=${token}`;
 
-    return sendEmail({
-        to: email,
-        subject: `LexAI — You've been invited to join ${orgName}`,
-        html: `
+  return sendEmail({
+    to: email,
+    subject: `LexAI — You've been invited to join ${orgName}`,
+    html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <h2 style="color: #2563eb;">Team Invitation</h2>
         <p>You've been invited to join <strong>${orgName}</strong> as a <strong>${role}</strong>.</p>
@@ -120,18 +123,18 @@ async function sendInvitationEmail(email, { token, orgName, role, expiresAt }) {
         <p style="color: #6b7280; font-size: 14px;">Invitation token: <code>${token}</code></p>
       </div>
     `,
-        text: `You've been invited to join ${orgName} as a ${role}. Accept with token: ${token}`,
-    });
+    text: `You've been invited to join ${orgName} as a ${role}. Accept with token: ${token}`,
+  });
 }
 
 /**
- * Send contract expiry alert email.
+ * Send contract expiry alert email with urgency styling.
  */
-async function sendExpiryAlertEmail(email, { contractTitle, daysUntilExpiry, expiryDate, orgName }) {
-    return sendEmail({
-        to: email,
-        subject: `LexAI — Contract "${contractTitle}" expires in ${daysUntilExpiry} days`,
-        html: `
+export async function sendExpiryAlertEmail(email, { contractTitle, daysUntilExpiry, expiryDate, orgName }) {
+  return sendEmail({
+    to: email,
+    subject: `LexAI — Contract "${contractTitle}" expires in ${daysUntilExpiry} days`,
+    html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <h2 style="color: #ef4444;">⚠️ Contract Expiry Alert</h2>
         <p>The following contract in <strong>${orgName}</strong> is expiring soon:</p>
@@ -144,15 +147,8 @@ async function sendExpiryAlertEmail(email, { contractTitle, daysUntilExpiry, exp
         <p style="color: #9ca3af; font-size: 12px;">This is an automated notification from LexAI. AI analysis is not legal advice.</p>
       </div>
     `,
-        text: `Contract "${contractTitle}" in ${orgName} expires on ${new Date(expiryDate).toLocaleDateString()} (${daysUntilExpiry} days remaining).`,
-    });
+    text: `Contract "${contractTitle}" in ${orgName} expires on ${new Date(expiryDate).toLocaleDateString()} (${daysUntilExpiry} days remaining).`,
+  });
 }
 
-module.exports = {
-    initEmailTransporter,
-    sendEmail,
-    sendVerificationEmail,
-    sendPasswordResetEmail,
-    sendInvitationEmail,
-    sendExpiryAlertEmail,
-};
+export { initEmailTransporter };

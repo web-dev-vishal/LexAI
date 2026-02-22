@@ -1,20 +1,16 @@
 /**
  * Expiry Cron Job
  *
- * Runs daily at 2:00 AM UTC.
- * Scans all contracts for upcoming expiry dates and pushes alert
- * jobs to RabbitMQ for the alert worker to process.
+ * Runs daily at 2:00 AM UTC. Scans contracts for upcoming expiry
+ * and pushes alert jobs to RabbitMQ.
  */
 
-const cron = require('node-cron');
-const { scanExpiringContracts } = require('../services/alert.service');
-const logger = require('../utils/logger');
+import cron from 'node-cron';
+import { scanExpiringContracts } from '../services/alert.service.js';
+import logger from '../utils/logger.js';
 
-/**
- * Schedule the daily expiry scan.
- */
-function startExpiryCron() {
-    // Run at 2:00 AM UTC every day
+/** Schedule the daily expiry scan. */
+export function startExpiryCron() {
     cron.schedule('0 2 * * *', async () => {
         logger.info('⏰ Expiry cron job triggered (2:00 AM UTC)');
 
@@ -31,5 +27,3 @@ function startExpiryCron() {
 
     logger.info('✅ Expiry cron job scheduled: daily at 2:00 AM UTC');
 }
-
-module.exports = { startExpiryCron };

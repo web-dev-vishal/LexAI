@@ -1,12 +1,10 @@
-/**
- * User Routes
- */
+/** User Routes */
 
-const { Router } = require('express');
-const userController = require('../controllers/user.controller');
-const { authenticate } = require('../middleware/auth.middleware');
-const { authorize } = require('../middleware/rbac.middleware');
-const asyncWrapper = require('../utils/asyncWrapper');
+import { Router } from 'express';
+import * as userController from '../controllers/user.controller.js';
+import { authenticate } from '../middleware/auth.middleware.js';
+import { authorize } from '../middleware/rbac.middleware.js';
+import { asyncWrapper } from '../utils/asyncWrapper.js';
 
 const router = Router();
 
@@ -15,4 +13,4 @@ router.patch('/me', authenticate, asyncWrapper(userController.updateProfile));
 router.patch('/me/password', authenticate, asyncWrapper(userController.changePassword));
 router.get('/:id', authenticate, authorize('admin'), asyncWrapper(userController.getUserById));
 
-module.exports = router;
+export default router;

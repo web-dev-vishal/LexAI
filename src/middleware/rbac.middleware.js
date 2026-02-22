@@ -5,17 +5,17 @@
  * role is within the set of allowed roles for a route.
  *
  * Usage:
- *   router.delete('/contracts/:id', authenticate, authorize('admin', 'manager'), controller);
+ *   router.delete('/contracts/:id', authenticate, authorize('admin', 'manager'), handler);
  */
 
-const { sendError } = require('../utils/apiResponse');
-const HTTP = require('../constants/httpStatus');
+import { sendError } from '../utils/apiResponse.js';
+import HTTP from '../constants/httpStatus.js';
 
 /**
  * Create a middleware that restricts access to specific roles.
  * @param  {...string} allowedRoles - Roles that can access this route
  */
-function authorize(...allowedRoles) {
+export function authorize(...allowedRoles) {
     return (req, res, next) => {
         if (!req.user) {
             return sendError(res, {
@@ -36,5 +36,3 @@ function authorize(...allowedRoles) {
         next();
     };
 }
-
-module.exports = { authorize };

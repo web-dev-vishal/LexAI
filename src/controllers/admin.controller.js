@@ -3,20 +3,16 @@
  * Platform-wide stats, queue status, and admin-only endpoints.
  */
 
-const User = require('../models/User.model');
-const Organization = require('../models/Organization.model');
-const Contract = require('../models/Contract.model');
-const Analysis = require('../models/Analysis.model');
-const { getChannel } = require('../config/rabbitmq');
-const { getRedisClient } = require('../config/redis');
-const auditService = require('../services/audit.service');
-const { sendSuccess } = require('../utils/apiResponse');
-const { buildPaginationMeta } = require('../utils/apiResponse');
+import User from '../models/User.model.js';
+import Organization from '../models/Organization.model.js';
+import Contract from '../models/Contract.model.js';
+import Analysis from '../models/Analysis.model.js';
+import { getChannel } from '../config/rabbitmq.js';
+import * as auditService from '../services/audit.service.js';
+import { sendSuccess, buildPaginationMeta } from '../utils/apiResponse.js';
 
-/**
- * GET /admin/stats
- */
-async function getStats(req, res) {
+/** GET /admin/stats */
+export async function getStats(req, res) {
     const [totalUsers, totalOrgs, totalContracts, totalAnalyses] = await Promise.all([
         User.countDocuments(),
         Organization.countDocuments(),
@@ -24,20 +20,15 @@ async function getStats(req, res) {
         Analysis.countDocuments(),
     ]);
 
-    // Recent analyses (last 30 days)
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const analysesLast30Days = await Analysis.countDocuments({
-        createdAt: { $gte: thirtyDaysAgo },
-    });
+    const analysesLast30Days = await Analysis.countDocuments({ createdAt: { $gte: thirtyDaysAgo } });
 
-    // Average risk score
     const riskAgg = await Analysis.aggregate([
         { $match: { status: 'completed', riskScore: { $exists: true } } },
         { $group: { _id: null, avg: { $avg: '$riskScore' } } },
     ]);
     const averageRiskScore = riskAgg[0]?.avg ? Math.round(riskAgg[0].avg * 10) / 10 : 0;
 
-    // Queue depth
     let queueDepth = 0;
     try {
         const channel = getChannel();
@@ -49,23 +40,13 @@ async function getStats(req, res) {
 
     sendSuccess(res, {
         data: {
-            stats: {
-                totalUsers,
-                totalOrgs,
-                totalContracts,
-                totalAnalyses,
-                analysesLast30Days,
-                averageRiskScore,
-                queueDepth,
-            },
+            stats: { totalUsers, totalOrgs, totalContracts, totalAnalyses, analysesLast30Days, averageRiskScore, queueDepth },
         },
     });
 }
 
-/**
- * GET /admin/queue/status
- */
-async function getQueueStatus(req, res) {
+/** GET /admin/queue/status */
+export async function getQueueStatus(req, res) {
     let analysisQueue = { messageCount: 0, consumerCount: 0 };
     let dlxQueue = { messageCount: 0 };
 
@@ -73,9 +54,7 @@ async function getQueueStatus(req, res) {
         const channel = getChannel();
         if (channel) {
             analysisQueue = await channel.checkQueue(process.env.ANALYSIS_QUEUE || 'lexai.analysis.queue');
-            try {
-                dlxQueue = await channel.checkQueue('lexai.analysis.dlq');
-            } catch { /* DLQ might not exist yet */ }
+            try { dlxQueue = await channel.checkQueue('lexai.analysis.dlq'); } catch { /* DLQ might not exist */ }
         }
     } catch { /* RabbitMQ might be disconnected */ }
 
@@ -91,10 +70,8 @@ async function getQueueStatus(req, res) {
     });
 }
 
-/**
- * GET /admin/users
- */
-async function listUsers(req, res) {
+/** GET /admin/users */
+export async function listUsers(req, res) {
     const { page = 1, limit = 20 } = req.query;
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
@@ -104,30 +81,14 @@ async function listUsers(req, res) {
     ]);
 
     sendSuccess(res, {
-        data: {
-            users,
-            meta: buildPaginationMeta(total, parseInt(page), parseInt(limit)),
-        },
+        data: { users, meta: buildPaginationMeta(total, parseInt(page), parseInt(limit)) },
     });
 }
 
-/**
- * GET /admin/audit-logs
- */
-async function getAuditLogs(req, res) {
+/** GET /admin/audit-logs */
+export async function getAuditLogs(req, res) {
     const result = await auditService.getGlobalAuditLogs(req.query);
-
     sendSuccess(res, {
-        data: {
-            logs: result.logs,
-            meta: buildPaginationMeta(result.total, result.page, result.limit),
-        },
+        data: { logs: result.logs, meta: buildPaginationMeta(result.total, result.page, result.limit) },
     });
 }
-
-module.exports = {
-    getStats,
-    getQueueStatus,
-    listUsers,
-    getAuditLogs,
-};

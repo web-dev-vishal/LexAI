@@ -4,10 +4,13 @@
  * Team member invitations with:
  *   - Unique token (UUID) sent via email
  *   - 48-hour expiry via TTL index (MongoDB auto-deletes expired docs)
- *   - Status tracking: pending → accepted / expired
+ *   - Status tracking: pending → accepted | expired
+ *
+ * The TTL index on expiresAt means MongoDB will automatically clean up
+ * expired invitations — no cron job needed for garbage collection.
  */
 
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
 const invitationSchema = new mongoose.Schema(
     {
@@ -19,7 +22,7 @@ const invitationSchema = new mongoose.Schema(
         invitedBy: {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'User',
-            required: true,
+            required: true,  // Who sent the invitation
         },
         email: {
             type: String,
@@ -30,12 +33,12 @@ const invitationSchema = new mongoose.Schema(
         role: {
             type: String,
             enum: ['admin', 'manager', 'viewer'],
-            default: 'viewer',
+            default: 'viewer',  // Safest default — least privilege
         },
         token: {
             type: String,
             required: true,
-            unique: true,
+            unique: true,  // Ensures no two invitations share a token
         },
         status: {
             type: String,
@@ -44,7 +47,7 @@ const invitationSchema = new mongoose.Schema(
         },
         expiresAt: {
             type: Date,
-            required: true,
+            required: true,  // Must always have an expiry — no indefinite invitations
         },
         acceptedAt: Date,
     },
@@ -62,11 +65,13 @@ const invitationSchema = new mongoose.Schema(
 );
 
 // ─── Indexes ──────────────────────────────────────────────────────
-invitationSchema.index({ token: 1 }, { unique: true });
-invitationSchema.index({ orgId: 1, email: 1 });
-// TTL index: auto-delete documents when expiresAt is reached
+invitationSchema.index({ token: 1 }, { unique: true });   // Fast token lookups
+invitationSchema.index({ orgId: 1, email: 1 });           // Check for duplicate invitations
+
+// TTL index — MongoDB auto-deletes documents when expiresAt is reached
+// expireAfterSeconds: 0 means "delete at the exact expiresAt time"
 invitationSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
 const Invitation = mongoose.model('Invitation', invitationSchema);
 
-module.exports = Invitation;
+export default Invitation;

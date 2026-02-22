@@ -3,17 +3,13 @@
  *
  * IP-based sliding window rate limiting using Redis.
  * Default: 100 requests per 60-second window per IP.
- *
- * Adds standard rate-limit headers to every response:
- *   X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset
- *
- * Returns 429 Too Many Requests when limit is exceeded.
+ * Fails open if Redis is unavailable.
  */
 
-const { getRedisClient } = require('../config/redis');
-const { sendError } = require('../utils/apiResponse');
-const HTTP = require('../constants/httpStatus');
-const logger = require('../utils/logger');
+import { getRedisClient } from '../config/redis.js';
+import { sendError } from '../utils/apiResponse.js';
+import HTTP from '../constants/httpStatus.js';
+import logger from '../utils/logger.js';
 
 /**
  * Create a rate limiter middleware.
@@ -21,7 +17,7 @@ const logger = require('../utils/logger');
  * @param {number} [options.windowMs=60000] - Window size in milliseconds
  * @param {number} [options.max=100] - Max requests per window
  */
-function rateLimiter(options = {}) {
+export function rateLimiter(options = {}) {
     const windowMs = options.windowMs || parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 60000;
     const max = options.max || parseInt(process.env.RATE_LIMIT_MAX) || 100;
     const windowSec = Math.ceil(windowMs / 1000);
@@ -33,16 +29,14 @@ function rateLimiter(options = {}) {
             const windowKey = Math.floor(Date.now() / windowMs);
             const key = `ratelimit:${ip}:${windowKey}`;
 
-            // Atomic increment + set expiry
             const current = await redis.incr(key);
             if (current === 1) {
                 await redis.expire(key, windowSec);
             }
 
-            // Calculate reset time
             const resetTime = Math.ceil(((windowKey + 1) * windowMs) / 1000);
 
-            // Set rate limit headers on every response
+            // Set standard rate-limit headers on every response
             res.set('X-RateLimit-Limit', String(max));
             res.set('X-RateLimit-Remaining', String(Math.max(0, max - current)));
             res.set('X-RateLimit-Reset', String(resetTime));
@@ -61,11 +55,9 @@ function rateLimiter(options = {}) {
 
             next();
         } catch (err) {
-            // If Redis is down, allow the request through (fail open)
+            // Fail open — allow the request through if Redis is down
             logger.error('Rate limiter error:', err.message);
             next();
         }
     };
 }
-
-module.exports = { rateLimiter };

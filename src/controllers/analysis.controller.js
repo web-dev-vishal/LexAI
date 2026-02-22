@@ -3,14 +3,12 @@
  * Handles AI analysis requests and result retrieval.
  */
 
-const analysisService = require('../services/analysis.service');
-const { sendSuccess } = require('../utils/apiResponse');
-const HTTP = require('../constants/httpStatus');
+import * as analysisService from '../services/analysis.service.js';
+import { sendSuccess } from '../utils/apiResponse.js';
+import HTTP from '../constants/httpStatus.js';
 
-/**
- * POST /analyses
- */
-async function requestAnalysis(req, res) {
+/** POST /analyses */
+export async function requestAnalysis(req, res) {
     const orgId = req.headers['x-org-id'] || req.user.orgId;
 
     const result = await analysisService.requestAnalysis({
@@ -21,10 +19,7 @@ async function requestAnalysis(req, res) {
     });
 
     if (result.cached) {
-        sendSuccess(res, {
-            message: 'Analysis result retrieved from cache.',
-            data: result,
-        });
+        sendSuccess(res, { message: 'Analysis result retrieved from cache.', data: result });
     } else {
         sendSuccess(res, {
             statusCode: HTTP.ACCEPTED,
@@ -38,32 +33,16 @@ async function requestAnalysis(req, res) {
     }
 }
 
-/**
- * GET /analyses/:id
- */
-async function getAnalysis(req, res) {
+/** GET /analyses/:id */
+export async function getAnalysis(req, res) {
     const orgId = req.headers['x-org-id'] || req.user.orgId;
     const analysis = await analysisService.getAnalysis(req.params.id, orgId);
-
-    sendSuccess(res, {
-        data: { analysis },
-    });
+    sendSuccess(res, { data: { analysis } });
 }
 
-/**
- * GET /analyses/contract/:contractId
- */
-async function getAnalysesByContract(req, res) {
+/** GET /analyses/contract/:contractId */
+export async function getAnalysesByContract(req, res) {
     const orgId = req.headers['x-org-id'] || req.user.orgId;
     const analyses = await analysisService.getAnalysesByContract(req.params.contractId, orgId);
-
-    sendSuccess(res, {
-        data: { analyses },
-    });
+    sendSuccess(res, { data: { analyses } });
 }
-
-module.exports = {
-    requestAnalysis,
-    getAnalysis,
-    getAnalysesByContract,
-};

@@ -1,12 +1,10 @@
-/**
- * Admin Routes
- */
+/** Admin Routes — all require admin role. */
 
-const { Router } = require('express');
-const adminController = require('../controllers/admin.controller');
-const { authenticate } = require('../middleware/auth.middleware');
-const { authorize } = require('../middleware/rbac.middleware');
-const asyncWrapper = require('../utils/asyncWrapper');
+import { Router } from 'express';
+import * as adminController from '../controllers/admin.controller.js';
+import { authenticate } from '../middleware/auth.middleware.js';
+import { authorize } from '../middleware/rbac.middleware.js';
+import { asyncWrapper } from '../utils/asyncWrapper.js';
 
 const router = Router();
 
@@ -18,4 +16,4 @@ router.get('/queue/status', asyncWrapper(adminController.getQueueStatus));
 router.get('/users', asyncWrapper(adminController.listUsers));
 router.get('/audit-logs', asyncWrapper(adminController.getAuditLogs));
 
-module.exports = router;
+export default router;

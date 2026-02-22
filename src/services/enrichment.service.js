@@ -3,25 +3,28 @@
  *
  * Fetches data from public external APIs to enrich contract analysis:
  *   - REST Countries: country/jurisdiction validation, timezone
- *   - Open Exchange Rates: currency conversion
- *   - Abstract API Holidays: public holiday checks for expiry dates
  *   - World Time API: accurate current time for expiry calculations
  *   - IPify: user's public IP for audit logging
+ *   - Abstract API Holidays: public holiday checks for expiry dates
  *
- * All calls use HTTPS. Failures are non-fatal — enrichment is optional.
+ * All calls use HTTPS with a 5s timeout. Failures are NON-FATAL —
+ * enrichment is optional, the app works fine without it.
+ * Every function returns null on failure instead of throwing.
  */
 
-const axios = require('axios');
-const logger = require('../utils/logger');
+import axios from 'axios';
+import logger from '../utils/logger.js';
 
-const TIMEOUT = 5000; // 5s timeout for external API calls
+const TIMEOUT = 5000; // 5s timeout — fail fast for external API calls
 
 /**
  * Get country information for jurisdiction enrichment.
+ * Used to enrich contracts with region, timezone, and currency data.
+ *
  * @param {string} countryName - e.g., "United States"
- * @returns {Promise<object|null>}
+ * @returns {Promise<object|null>} Country info or null on failure
  */
-async function getCountryInfo(countryName) {
+export async function getCountryInfo(countryName) {
     try {
         const baseUrl = process.env.REST_COUNTRIES_URL || 'https://restcountries.com/v3.1';
         const response = await axios.get(`${baseUrl}/name/${encodeURIComponent(countryName)}`, {
@@ -37,21 +40,24 @@ async function getCountryInfo(countryName) {
             name: country.name?.common || countryName,
             region: country.region,
             subregion: country.subregion,
-            currency: currencies[0] || 'USD',
+            currency: currencies[0] || 'USD',   // Default to USD if no currency found
             timezones: country.timezones || [],
             capital: country.capital?.[0] || '',
         };
     } catch (err) {
         logger.warn(`REST Countries API failed for "${countryName}": ${err.message}`);
-        return null;
+        return null; // Non-fatal — enrichment is optional
     }
 }
 
 /**
  * Get the current time for a timezone (used for accurate expiry calculations).
+ * Useful when the server is in a different timezone than the contract's jurisdiction.
+ *
  * @param {string} timezone - e.g., "America/New_York"
+ * @returns {Promise<object|null>}
  */
-async function getWorldTime(timezone) {
+export async function getWorldTime(timezone) {
     try {
         const baseUrl = process.env.WORLD_TIME_API_URL || 'https://worldtimeapi.org/api';
         const response = await axios.get(`${baseUrl}/timezone/${timezone}`, { timeout: TIMEOUT });
@@ -68,8 +74,11 @@ async function getWorldTime(timezone) {
 
 /**
  * Get the user's public IP address (for audit logging).
+ * Calls ipify.org — returns null if the service is unavailable.
+ *
+ * @returns {Promise<string|null>}
  */
-async function getPublicIP() {
+export async function getPublicIP() {
     try {
         const response = await axios.get('https://api.ipify.org', {
             params: { format: 'json' },
@@ -85,10 +94,13 @@ async function getPublicIP() {
 /**
  * Check if a date falls on a public holiday in a given country.
  * Uses Abstract API Holidays (requires API key for production).
+ * Useful for warning users if a contract expires on a holiday.
+ *
  * @param {string} country - 2-letter country code (e.g., "US")
- * @param {Date} date
+ * @param {Date} date - The date to check
+ * @returns {Promise<object|null>} Holiday info or null if unavailable
  */
-async function checkHoliday(country, date) {
+export async function checkHoliday(country, date) {
     try {
         const apiKey = process.env.ABSTRACT_API_KEY;
         if (!apiKey) {
@@ -119,10 +131,3 @@ async function checkHoliday(country, date) {
         return null;
     }
 }
-
-module.exports = {
-    getCountryInfo,
-    getWorldTime,
-    getPublicIP,
-    checkHoliday,
-};

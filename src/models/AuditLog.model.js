@@ -4,12 +4,17 @@
  * Immutable log of every significant action in the system.
  * Has a 90-day TTL index — MongoDB automatically deletes old entries.
  *
- * Per GDPR: on user deletion, userId is replaced with a tombstone value
- * rather than deleting the log entry (preserves the audit trail).
+ * GDPR consideration: on user deletion, userId is replaced with a
+ * tombstone value rather than deleting the log entry (preserves
+ * the audit trail while respecting data minimization).
+ *
+ * These logs are NOT the same as Winston logs — they are structured
+ * business events stored in MongoDB for compliance and admin visibility.
  */
 
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
+// 90 days in seconds — after this, MongoDB auto-deletes the document
 const NINETY_DAYS_IN_SECONDS = 90 * 24 * 60 * 60; // 7,776,000
 
 const auditLogSchema = new mongoose.Schema(
@@ -19,15 +24,14 @@ const auditLogSchema = new mongoose.Schema(
         action: {
             type: String,
             required: true,
-            // Examples: 'contract.uploaded', 'analysis.requested', 'user.login',
-            // 'contract.deleted', 'org.member.invited', 'org.member.removed'
+            // Convention: 'resource.verb' — e.g., 'contract.uploaded', 'user.login'
         },
         resourceType: {
             type: String,
             enum: ['User', 'Organization', 'Contract', 'Analysis', 'Invitation', 'System'],
         },
         resourceId: mongoose.Schema.Types.ObjectId,
-        metadata: mongoose.Schema.Types.Mixed,
+        metadata: mongoose.Schema.Types.Mixed,  // Free-form context (title, version, etc.)
         ipAddress: String,
         userAgent: String,
     },
@@ -45,13 +49,13 @@ const auditLogSchema = new mongoose.Schema(
 );
 
 // ─── Indexes ──────────────────────────────────────────────────────
-auditLogSchema.index({ orgId: 1, createdAt: -1 });
-auditLogSchema.index({ userId: 1, createdAt: -1 });
-auditLogSchema.index({ action: 1 });
+auditLogSchema.index({ orgId: 1, createdAt: -1 });    // Org-scoped audit trail
+auditLogSchema.index({ userId: 1, createdAt: -1 });   // Per-user activity log
+auditLogSchema.index({ action: 1 });                   // Filter by action type
 
-// 90-day TTL — auto-delete old audit logs
+// TTL index — MongoDB automatically deletes documents 90 days after creation
 auditLogSchema.index({ createdAt: 1 }, { expireAfterSeconds: NINETY_DAYS_IN_SECONDS });
 
 const AuditLog = mongoose.model('AuditLog', auditLogSchema);
 
-module.exports = AuditLog;
+export default AuditLog;

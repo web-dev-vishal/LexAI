@@ -1,21 +1,18 @@
-/**
- * Contract Routes
- * Includes file upload via multer and version comparison.
- */
+/** Contract Routes — includes file upload via multer and version comparison. */
 
-const { Router } = require('express');
-const multer = require('multer');
-const contractController = require('../controllers/contract.controller');
-const diffController = require('../controllers/diff.controller');
-const { authenticate } = require('../middleware/auth.middleware');
-const { authorize } = require('../middleware/rbac.middleware');
-const { validate } = require('../middleware/validate.middleware');
-const contractValidator = require('../validators/contract.validator');
-const asyncWrapper = require('../utils/asyncWrapper');
+import { Router } from 'express';
+import multer from 'multer';
+import * as contractController from '../controllers/contract.controller.js';
+import * as diffController from '../controllers/diff.controller.js';
+import { authenticate } from '../middleware/auth.middleware.js';
+import { authorize } from '../middleware/rbac.middleware.js';
+import { validate } from '../middleware/validate.middleware.js';
+import * as contractValidator from '../validators/contract.validator.js';
+import { asyncWrapper } from '../utils/asyncWrapper.js';
 
 const router = Router();
 
-// Multer config — store in memory (we extract text then discard the file)
+// Multer config — store in memory (extract text then discard the file)
 const upload = multer({
     storage: multer.memoryStorage(),
     limits: {
@@ -48,4 +45,4 @@ router.post('/:id/compare', authenticate, validate(contractValidator.compareVers
 // Audit trail
 router.get('/:id/audit', authenticate, asyncWrapper(contractController.getContractAudit));
 
-module.exports = router;
+export default router;

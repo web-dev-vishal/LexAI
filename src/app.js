@@ -3,23 +3,28 @@
  *
  * Configures all middleware, security headers, and routes.
  * Does NOT start the server — that's done in server.js.
+ *
+ * NOTE: `express-async-errors` is imported for its side effect —
+ * it patches Express to catch unhandled promise rejections in
+ * route handlers, making asyncWrapper optional but still useful
+ * for explicit error handling.
  */
 
-require('express-async-errors');
+import 'express-async-errors';
 
-const express = require('express');
-const helmet = require('helmet');
-const cors = require('cors');
-const mongoSanitize = require('express-mongo-sanitize');
-const cookieParser = require('cookie-parser');
+import express from 'express';
+import helmet from 'helmet';
+import cors from 'cors';
+import mongoSanitize from 'express-mongo-sanitize';
+import cookieParser from 'cookie-parser';
 
-const routes = require('./routes');
-const healthRoutes = require('./routes/health.routes');
-const { rateLimiter } = require('./middleware/rateLimiter.middleware');
-const { errorHandler } = require('./middleware/errorHandler.middleware');
-const { attachRequestId, httpLogger } = require('./middleware/requestLogger.middleware');
+import routes from './routes/index.js';
+import healthRoutes from './routes/health.routes.js';
+import { rateLimiter } from './middleware/rateLimiter.middleware.js';
+import { errorHandler } from './middleware/errorHandler.middleware.js';
+import { attachRequestId, httpLogger } from './middleware/requestLogger.middleware.js';
 
-function createApp() {
+export default function createApp() {
     const app = express();
 
     // ─── Security Middleware ────────────────────────────────────────
@@ -71,5 +76,3 @@ function createApp() {
 
     return app;
 }
-
-module.exports = createApp;

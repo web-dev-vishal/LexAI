@@ -6,16 +6,17 @@
  * Attaches the decoded user to req.user for downstream use.
  */
 
-const { verifyToken } = require('../utils/tokenHelper');
-const { getRedisClient } = require('../config/redis');
-const { sendError } = require('../utils/apiResponse');
-const HTTP = require('../constants/httpStatus');
-const logger = require('../utils/logger');
+import { verifyToken } from '../utils/tokenHelper.js';
+import { getRedisClient } from '../config/redis.js';
+import { sendError } from '../utils/apiResponse.js';
+import HTTP from '../constants/httpStatus.js';
+import logger from '../utils/logger.js';
 
 /**
  * Protect routes — requires a valid, non-blacklisted JWT.
+ * Must be placed before any route that requires authentication.
  */
-async function authenticate(req, res, next) {
+export async function authenticate(req, res, next) {
     try {
         const authHeader = req.headers.authorization;
 
@@ -42,7 +43,7 @@ async function authenticate(req, res, next) {
             });
         }
 
-        // Attach user info to request
+        // Attach user info to request for downstream middleware and controllers
         req.user = {
             userId: decoded.userId,
             orgId: decoded.orgId,
@@ -76,5 +77,3 @@ async function authenticate(req, res, next) {
         });
     }
 }
-
-module.exports = { authenticate };

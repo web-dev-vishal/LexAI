@@ -3,24 +3,29 @@
  *
  * Writes immutable audit log entries for every significant action.
  * Logs are auto-deleted after 90 days via MongoDB TTL index.
+ *
+ * IMPORTANT: Audit logging failures are swallowed silently —
+ * we never want a failed audit log to break a user's request.
  */
 
-const AuditLog = require('../models/AuditLog.model');
-const logger = require('../utils/logger');
+import AuditLog from '../models/AuditLog.model.js';
+import logger from '../utils/logger.js';
 
 /**
  * Create an audit log entry.
+ * Wraps the DB write in try/catch so audit failures are non-fatal.
+ *
  * @param {object} entry
- * @param {string} entry.orgId
- * @param {string} entry.userId
+ * @param {string} entry.orgId - Organization context
+ * @param {string} entry.userId - Who performed the action
  * @param {string} entry.action - e.g., 'contract.uploaded', 'analysis.requested'
  * @param {string} [entry.resourceType] - 'Contract', 'Analysis', 'User', etc.
- * @param {string} [entry.resourceId]
- * @param {object} [entry.metadata] - Additional context
- * @param {string} [entry.ipAddress]
- * @param {string} [entry.userAgent]
+ * @param {string} [entry.resourceId] - ID of the affected resource
+ * @param {object} [entry.metadata] - Additional context (title, version, etc.)
+ * @param {string} [entry.ipAddress] - Client IP for security auditing
+ * @param {string} [entry.userAgent] - Client user-agent string
  */
-async function log(entry) {
+export async function log(entry) {
     try {
         await AuditLog.create({
             orgId: entry.orgId,
@@ -33,15 +38,15 @@ async function log(entry) {
             userAgent: entry.userAgent,
         });
     } catch (err) {
-        // Audit logging failures should never crash the app
+        // Audit logging failures should NEVER crash the app or fail user requests
         logger.error('Audit log write failed:', err.message);
     }
 }
 
 /**
- * Get audit logs for a specific contract.
+ * Get audit logs for a specific contract (most recent first).
  */
-async function getContractAuditLogs(contractId, orgId) {
+export async function getContractAuditLogs(contractId, orgId) {
     return AuditLog.find({
         orgId,
         resourceType: 'Contract',
@@ -54,7 +59,7 @@ async function getContractAuditLogs(contractId, orgId) {
 /**
  * Get global audit logs (admin endpoint) with pagination.
  */
-async function getGlobalAuditLogs(query = {}) {
+export async function getGlobalAuditLogs(query = {}) {
     const { page = 1, limit = 20 } = query;
     const skip = (page - 1) * limit;
 
@@ -65,9 +70,3 @@ async function getGlobalAuditLogs(query = {}) {
 
     return { logs, total, page, limit };
 }
-
-module.exports = {
-    log,
-    getContractAuditLogs,
-    getGlobalAuditLogs,
-};

@@ -1,16 +1,13 @@
 /**
- * Diff Controller
- * Handles version comparison requests.
+ * Diff Controller — version comparison requests.
  */
 
-const diffService = require('../services/diff.service');
-const { sendSuccess } = require('../utils/apiResponse');
-const HTTP = require('../constants/httpStatus');
+import * as diffService from '../services/diff.service.js';
+import { sendSuccess } from '../utils/apiResponse.js';
+import HTTP from '../constants/httpStatus.js';
 
-/**
- * POST /contracts/:id/compare
- */
-async function compareVersions(req, res) {
+/** POST /contracts/:id/compare */
+export async function compareVersions(req, res) {
     const orgId = req.headers['x-org-id'] || req.user.orgId;
 
     const result = await diffService.compareVersions({
@@ -27,5 +24,3 @@ async function compareVersions(req, res) {
         data: result,
     });
 }
-
-module.exports = { compareVersions };

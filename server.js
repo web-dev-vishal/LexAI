@@ -4,21 +4,21 @@
  * Starts the HTTP server with Socket.io, connects to all services,
  * initializes the Redis Pub/Sub subscriber, and starts the cron job.
  *
- * This is the API process — it handles HTTP requests and Socket.io connections.
+ * This is the API process — it handles HTTP requests and Socket.io.
  * The AI worker runs separately via worker.js.
  */
 
-const http = require('http');
-const env = require('./src/config/env');
-const createApp = require('./src/app');
-const { connectDB } = require('./src/config/db');
-const { initRedis, getRedisClient, getRedisSub } = require('./src/config/redis');
-const { connectRabbitMQ } = require('./src/config/rabbitmq');
-const { initSocket } = require('./src/config/socket');
-const { initPubSubSubscriber } = require('./src/sockets/pubsub.subscriber');
-const { initEmailTransporter } = require('./src/services/email.service');
-const { startExpiryCron } = require('./src/jobs/expiry.cron');
-const logger = require('./src/utils/logger');
+import http from 'http';
+import env from './src/config/env.js';
+import createApp from './src/app.js';
+import { connectDB, disconnectDB } from './src/config/db.js';
+import { initRedis, getRedisClient, getRedisSub, disconnectRedis } from './src/config/redis.js';
+import { connectRabbitMQ, disconnectRabbitMQ } from './src/config/rabbitmq.js';
+import { initSocket } from './src/config/socket.js';
+import { initPubSubSubscriber } from './src/sockets/pubsub.subscriber.js';
+import { initEmailTransporter } from './src/services/email.service.js';
+import { startExpiryCron } from './src/jobs/expiry.cron.js';
+import logger from './src/utils/logger.js';
 
 async function startServer() {
     try {
@@ -41,8 +41,6 @@ async function startServer() {
         const server = http.createServer(app);
 
         // 7. Initialize Socket.io with Redis adapter
-        //    Need duplicate ioredis clients for the socket adapter
-        const Redis = require('ioredis');
         const adapterPub = getRedisClient().duplicate();
         const adapterSub = getRedisClient().duplicate();
         const io = initSocket(server, env, adapterPub, adapterSub);
@@ -70,10 +68,6 @@ async function startServer() {
             server.close(async () => {
                 logger.info('HTTP server closed');
 
-                const { disconnectDB } = require('./src/config/db');
-                const { disconnectRedis } = require('./src/config/redis');
-                const { disconnectRabbitMQ } = require('./src/config/rabbitmq');
-
                 await Promise.allSettled([
                     disconnectDB(),
                     disconnectRedis(),
@@ -94,7 +88,6 @@ async function startServer() {
         process.on('SIGTERM', () => shutdown('SIGTERM'));
         process.on('SIGINT', () => shutdown('SIGINT'));
 
-        // Catch unhandled rejections
         process.on('unhandledRejection', (reason) => {
             logger.error('Unhandled Promise Rejection:', reason);
         });

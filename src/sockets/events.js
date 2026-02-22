@@ -18,4 +18,4 @@ const SOCKET_EVENTS = Object.freeze({
     JOIN_ORG: 'join:org',
 });
 
-module.exports = SOCKET_EVENTS;
+export default SOCKET_EVENTS;

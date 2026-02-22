@@ -6,21 +6,22 @@
  * if validation fails.
  *
  * Usage:
- *   router.post('/auth/register', validate(registerSchema), authController.register);
+ *   router.post('/auth/register', validate(registerSchema), handler);
+ *   router.get('/contracts', validate(listSchema, 'query'), handler);
  */
 
-const { sendError } = require('../utils/apiResponse');
-const HTTP = require('../constants/httpStatus');
+import { sendError } from '../utils/apiResponse.js';
+import HTTP from '../constants/httpStatus.js';
 
 /**
  * Create a validation middleware for a Joi schema.
  * @param {import('joi').ObjectSchema} schema - Joi validation schema
  * @param {'body'|'query'|'params'} [source='body'] - Which part of the request to validate
  */
-function validate(schema, source = 'body') {
+export function validate(schema, source = 'body') {
     return (req, res, next) => {
         const { error, value } = schema.validate(req[source], {
-            abortEarly: false,  // Return all errors, not just the first
+            abortEarly: false,  // Return ALL errors, not just the first
             stripUnknown: true, // Remove unexpected fields silently
         });
 
@@ -43,5 +44,3 @@ function validate(schema, source = 'body') {
         next();
     };
 }
-
-module.exports = { validate };

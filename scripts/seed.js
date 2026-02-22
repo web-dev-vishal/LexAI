@@ -3,16 +3,13 @@
  *
  * Creates the first admin user in a fresh database.
  * Run once on first deployment: `npm run seed`
- *
- * Reads ADMIN_EMAIL and ADMIN_PASSWORD from environment variables.
- * Will skip if an admin user already exists.
  */
 
-require('dotenv').config();
+import 'dotenv/config';
 
-const mongoose = require('mongoose');
-const User = require('../src/models/User.model');
-const logger = require('../src/utils/logger');
+import mongoose from 'mongoose';
+import User from '../src/models/User.model.js';
+import logger from '../src/utils/logger.js';
 
 async function seed() {
     const mongoUri = process.env.MONGO_URI;
@@ -25,7 +22,6 @@ async function seed() {
         await mongoose.connect(mongoUri);
         logger.info('Connected to MongoDB for seeding');
 
-        // Check if admin already exists
         const existingAdmin = await User.findOne({ role: 'admin' });
         if (existingAdmin) {
             logger.info(`Admin user already exists: ${existingAdmin.email}. Skipping seed.`);
@@ -45,11 +41,10 @@ async function seed() {
             isActive: true,
         });
 
-        logger.info('✅ Admin user created successfully:');
-        logger.info(`   Email:    ${admin.email}`);
-        logger.info(`   Role:     ${admin.role}`);
-        logger.info(`   ID:       ${admin._id}`);
-        logger.info('');
+        logger.info('✅ Admin user created:');
+        logger.info(`   Email: ${admin.email}`);
+        logger.info(`   Role:  ${admin.role}`);
+        logger.info(`   ID:    ${admin._id}`);
         logger.info('⚠️  Change the admin password immediately in production!');
 
         await mongoose.disconnect();

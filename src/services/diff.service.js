@@ -3,23 +3,28 @@
  *
  * Compares two versions of a contract:
  *   1. Text-level diff (line-by-line comparison)
- *   2. AI-powered explanation of changes
+ *   2. AI-powered explanation of changes (queued via RabbitMQ)
  *
- * Available to Pro and Enterprise plans only.
+ * Available to Pro and Enterprise plans only — plan checks happen here.
  */
 
-const Contract = require('../models/Contract.model');
-const Organization = require('../models/Organization.model');
-const { getPlanLimits } = require('../constants/plans');
-const { publishToQueue } = require('../config/rabbitmq');
-const { v4: uuidv4 } = require('uuid');
-const logger = require('../utils/logger');
+import Contract from '../models/Contract.model.js';
+import Organization from '../models/Organization.model.js';
+import { getPlanLimits } from '../constants/plans.js';
+import { publishToQueue } from '../config/rabbitmq.js';
+import { v4 as uuidv4 } from 'uuid';
+import logger from '../utils/logger.js';
+import AppError from '../utils/AppError.js';
 
 /**
  * Generate a simple text diff between two strings.
  * Returns a unified-diff-style output showing added/removed lines.
+ *
+ * Note: This is a basic line-by-line comparison, not a proper diff algorithm
+ * (no LCS or Myers). Good enough for showing changes to the user before
+ * the AI explanation comes back.
  */
-function generateTextDiff(textA, textB) {
+export function generateTextDiff(textA, textB) {
     const linesA = textA.split('\n');
     const linesB = textB.split('\n');
     const diff = [];
@@ -31,10 +36,10 @@ function generateTextDiff(textA, textB) {
         const lineB = linesB[i] || '';
 
         if (lineA === lineB) {
-            diff.push(`  ${lineA}`);
+            diff.push(`  ${lineA}`);  // Unchanged line (leading spaces = context)
         } else {
-            if (lineA) diff.push(`- ${lineA}`);
-            if (lineB) diff.push(`+ ${lineB}`);
+            if (lineA) diff.push(`- ${lineA}`);  // Removed from version A
+            if (lineB) diff.push(`+ ${lineB}`);  // Added in version B
         }
     }
 
@@ -42,45 +47,51 @@ function generateTextDiff(textA, textB) {
 }
 
 /**
- * Compare two versions of a contract. Queues an AI diff explanation job.
+ * Compare two versions of a contract.
+ * Generates a text diff immediately and queues an AI explanation job.
+ *
+ * @returns {{ jobId: string }} Job ID for polling the AI explanation result
  */
-async function compareVersions({ contractId, orgId, userId, versionA, versionB }) {
-    // Check plan access
+export async function compareVersions({ contractId, orgId, userId, versionA, versionB }) {
+    // Check plan access — only Pro and Enterprise can compare versions
     const org = await Organization.findById(orgId).lean();
     const planLimits = getPlanLimits(org.plan);
 
     if (!planLimits.versionComparison) {
-        const error = new Error('Version comparison is available on Pro and Enterprise plans only.');
-        error.statusCode = 403;
-        error.code = 'FORBIDDEN';
-        throw error;
+        throw new AppError(
+            'Version comparison is available on Pro and Enterprise plans only.',
+            403,
+            'FORBIDDEN'
+        );
     }
 
-    // Fetch contract
+    // Fetch contract with full version history
     const contract = await Contract.findOne({ _id: contractId, orgId, isDeleted: false });
     if (!contract) {
-        const error = new Error('Contract not found.');
-        error.statusCode = 404;
-        throw error;
+        throw new AppError('Contract not found.', 404, 'NOT_FOUND');
     }
 
+    // Find both requested versions
     const verA = contract.versions.find((v) => v.versionNumber === versionA);
     const verB = contract.versions.find((v) => v.versionNumber === versionB);
 
     if (!verA || !verB) {
-        const error = new Error(`One or both versions not found. Available versions: ${contract.versions.map((v) => v.versionNumber).join(', ')}`);
-        error.statusCode = 404;
-        throw error;
+        const available = contract.versions.map((v) => v.versionNumber).join(', ');
+        throw new AppError(
+            `One or both versions not found. Available versions: ${available}`,
+            404,
+            'VERSION_NOT_FOUND'
+        );
     }
 
-    // Generate text diff
+    // Generate text diff for immediate return
     const diffText = generateTextDiff(verA.content, verB.content);
 
-    // Queue AI explanation job
+    // Queue AI explanation job — result will arrive via Socket.io
     const jobId = uuidv4();
     publishToQueue(process.env.ANALYSIS_QUEUE || 'lexai.analysis.queue', {
         jobId,
-        type: 'diff',
+        type: 'diff', // Worker uses this to route to diff handler instead of analysis handler
         contractId: contractId.toString(),
         orgId: orgId.toString(),
         userId: userId.toString(),
@@ -95,8 +106,3 @@ async function compareVersions({ contractId, orgId, userId, versionA, versionB }
 
     return { jobId };
 }
-
-module.exports = {
-    compareVersions,
-    generateTextDiff,
-};

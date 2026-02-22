@@ -2,27 +2,25 @@
  * Worker Entry Point
  *
  * Runs RabbitMQ consumers for AI analysis and alert jobs.
- * This is a separate process from the API server — it does NOT
- * handle HTTP requests or Socket.io connections.
- *
- * Communication with the API process happens via Redis Pub/Sub.
+ * Separate process from the API server — no HTTP or Socket.io.
+ * Communicates with the API process via Redis Pub/Sub.
  */
 
-const env = require('./src/config/env');
-const { connectDB } = require('./src/config/db');
-const { initRedis } = require('./src/config/redis');
-const { connectRabbitMQ } = require('./src/config/rabbitmq');
-const { initEmailTransporter } = require('./src/services/email.service');
-const { startAnalysisWorker } = require('./src/workers/analysis.worker');
-const { startAlertWorker } = require('./src/workers/alert.worker');
-const logger = require('./src/utils/logger');
+import env from './src/config/env.js';
+import { connectDB, disconnectDB } from './src/config/db.js';
+import { initRedis, disconnectRedis } from './src/config/redis.js';
+import { connectRabbitMQ, disconnectRabbitMQ } from './src/config/rabbitmq.js';
+import { initEmailTransporter } from './src/services/email.service.js';
+import { startAnalysisWorker } from './src/workers/analysis.worker.js';
+import { startAlertWorker } from './src/workers/alert.worker.js';
+import logger from './src/utils/logger.js';
 
 async function startWorker() {
     try {
         // 1. Connect to MongoDB (workers need to read/write analysis results)
         await connectDB(env.MONGO_URI);
 
-        // 2. Connect to Redis (for caching, Pub/Sub publishing, distributed locks)
+        // 2. Connect to Redis (caching, Pub/Sub publishing, distributed locks)
         await initRedis(env);
 
         // 3. Connect to RabbitMQ
@@ -40,10 +38,6 @@ async function startWorker() {
         // ─── Graceful Shutdown ────────────────────────────────────────
         const shutdown = async (signal) => {
             logger.info(`\n${signal} received. Shutting down worker...`);
-
-            const { disconnectDB } = require('./src/config/db');
-            const { disconnectRedis } = require('./src/config/redis');
-            const { disconnectRabbitMQ } = require('./src/config/rabbitmq');
 
             await Promise.allSettled([
                 disconnectDB(),

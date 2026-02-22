@@ -1,23 +1,22 @@
 /**
- * Contract Validators
- * Joi schemas for contract upload, update, version, and comparison.
+ * Contract Validators — Joi schemas for contract endpoints.
  */
 
-const Joi = require('joi');
+import Joi from 'joi';
 
-const uploadContract = Joi.object({
+export const uploadContract = Joi.object({
     title: Joi.string().trim().min(3).max(300).required(),
     type: Joi.string().valid('NDA', 'Vendor', 'Employment', 'SaaS', 'Other').default('Other'),
     tags: Joi.alternatives().try(
         Joi.array().items(Joi.string().trim().lowercase()),
-        Joi.string().trim() // Accept comma-separated string too
+        Joi.string().trim()
     ).optional(),
-    content: Joi.string().min(50).optional(), // Either file or content must be provided
+    content: Joi.string().min(50).optional(),
     expiryDate: Joi.date().iso().optional(),
     jurisdiction: Joi.string().optional(),
 });
 
-const updateContract = Joi.object({
+export const updateContract = Joi.object({
     title: Joi.string().trim().min(3).max(300).optional(),
     type: Joi.string().valid('NDA', 'Vendor', 'Employment', 'SaaS', 'Other').optional(),
     tags: Joi.array().items(Joi.string().trim().lowercase()).optional(),
@@ -25,17 +24,17 @@ const updateContract = Joi.object({
     expiryDate: Joi.date().iso().optional(),
 });
 
-const uploadVersion = Joi.object({
+export const uploadVersion = Joi.object({
     content: Joi.string().min(50).required(),
     changeNote: Joi.string().max(500).optional(),
 });
 
-const compareVersions = Joi.object({
+export const compareVersions = Joi.object({
     versionA: Joi.number().integer().min(1).required(),
     versionB: Joi.number().integer().min(1).required(),
 });
 
-const listContracts = Joi.object({
+export const listContracts = Joi.object({
     page: Joi.number().integer().min(1).default(1),
     limit: Joi.number().integer().min(1).max(100).default(10),
     sortBy: Joi.string().valid('createdAt', 'title', 'type', 'riskScore', 'expiryDate').default('createdAt'),
@@ -44,11 +43,3 @@ const listContracts = Joi.object({
     tag: Joi.string().trim().lowercase().optional(),
     search: Joi.string().trim().max(200).optional(),
 });
-
-module.exports = {
-    uploadContract,
-    updateContract,
-    uploadVersion,
-    compareVersions,
-    listContracts,
-};

@@ -1,12 +1,9 @@
-/**
- * Health Check Route
- * Unauthenticated — used by Docker healthchecks and load balancers.
- */
+/** Health Check Route — unauthenticated, for Docker/load balancer probes. */
 
-const { Router } = require('express');
-const { isMongoHealthy } = require('../config/db');
-const { isRedisHealthy } = require('../config/redis');
-const { isRabbitHealthy } = require('../config/rabbitmq');
+import { Router } from 'express';
+import { isMongoHealthy } from '../config/db.js';
+import { isRedisHealthy } from '../config/redis.js';
+import { isRabbitHealthy } from '../config/rabbitmq.js';
 
 const router = Router();
 
@@ -33,4 +30,4 @@ router.get('/', async (req, res) => {
     res.status(allHealthy ? 200 : 503).json(body);
 });
 
-module.exports = router;
+export default router;

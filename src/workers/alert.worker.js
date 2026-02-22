@@ -2,21 +2,18 @@
  * Alert Worker
  *
  * RabbitMQ consumer for contract expiry alert jobs.
- * Receives jobs from the expiry cron scanner and dispatches
- * both Socket.io events and emails to org members.
+ * Receives jobs from the expiry cron and dispatches notifications.
  */
 
-const { getChannel } = require('../config/rabbitmq');
-const { getRedisClient } = require('../config/redis');
-const alertService = require('../services/alert.service');
-const logger = require('../utils/logger');
+import { getChannel } from '../config/rabbitmq.js';
+import { getRedisClient } from '../config/redis.js';
+import * as alertService from '../services/alert.service.js';
+import logger from '../utils/logger.js';
 
 const ALERT_QUEUE = process.env.ALERT_QUEUE || 'lexai.alert.queue';
 
-/**
- * Start consuming alert jobs from the queue.
- */
-async function startAlertWorker() {
+/** Start consuming alert jobs from the queue. */
+export async function startAlertWorker() {
     const channel = getChannel();
     if (!channel) {
         logger.error('Cannot start alert worker — RabbitMQ channel not available');
@@ -31,7 +28,6 @@ async function startAlertWorker() {
         try {
             const payload = JSON.parse(msg.content.toString());
             const redis = getRedisClient();
-
             await alertService.processExpiryAlert(payload, redis);
             channel.ack(msg);
         } catch (err) {
@@ -40,5 +36,3 @@ async function startAlertWorker() {
         }
     }, { noAck: false });
 }
-
-module.exports = { startAlertWorker };

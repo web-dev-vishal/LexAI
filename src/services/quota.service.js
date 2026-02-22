@@ -1,22 +1,18 @@
 /**
  * Quota Service
  *
- * Manages per-user monthly analysis quotas using Redis counters.
- * Quotas are tracked with INCR + EXPIRE and synced to MongoDB nightly.
+ * Per-user monthly analysis quotas using Redis counters.
+ * Keys auto-expire at month boundaries via EXPIRE TTL.
  */
 
-const { getRedisClient } = require('../config/redis');
-const { getCurrentMonthKey, secondsUntilEndOfMonth, getQuotaResetDate } = require('../utils/dateHelper');
-const { getPlanLimits } = require('../constants/plans');
-const logger = require('../utils/logger');
+import { getRedisClient } from '../config/redis.js';
+import { getCurrentMonthKey, secondsUntilEndOfMonth, getQuotaResetDate } from '../utils/dateHelper.js';
+import { getPlanLimits } from '../constants/plans.js';
 
 /**
  * Check if a user has remaining quota for this month.
- * @param {string} userId
- * @param {string} plan - User's org plan name
- * @returns {Promise<{ allowed: boolean, used: number, limit: number }>}
  */
-async function checkQuota(userId, plan) {
+export async function checkQuota(userId, plan) {
     const redis = getRedisClient();
     const planLimits = getPlanLimits(plan);
 
@@ -39,9 +35,8 @@ async function checkQuota(userId, plan) {
 
 /**
  * Increment the user's quota usage by 1.
- * @param {string} userId
  */
-async function incrementQuota(userId) {
+export async function incrementQuota(userId) {
     const redis = getRedisClient();
     const monthKey = getCurrentMonthKey();
     const quotaKey = `quota:${userId}:${monthKey}`;
@@ -55,9 +50,9 @@ async function incrementQuota(userId) {
 }
 
 /**
- * Get quota info for display in user profile.
+ * Get quota info formatted for user profile display.
  */
-async function getQuotaInfo(userId, plan) {
+export async function getQuotaInfo(userId, plan) {
     const { used, limit, remaining, resetsAt } = await checkQuota(userId, plan);
     return {
         used,
@@ -66,9 +61,3 @@ async function getQuotaInfo(userId, plan) {
         resetsAt,
     };
 }
-
-module.exports = {
-    checkQuota,
-    incrementQuota,
-    getQuotaInfo,
-};

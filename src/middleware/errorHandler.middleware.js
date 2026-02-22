@@ -2,18 +2,21 @@
  * Global Error Handler Middleware
  *
  * Catches all unhandled errors thrown by controllers/services and
- * returns a standardized error response. Differentiates between
- * known application errors and unexpected server errors.
+ * returns a standardized error response. Handles:
+ *   - AppError (custom errors with statusCode)
+ *   - Mongoose ValidationError, CastError, duplicate key
+ *   - JWT errors (fallback if not caught earlier)
+ *   - Unexpected server errors
  *
  * Must be the LAST middleware registered in Express.
  */
 
-const HTTP = require('../constants/httpStatus');
-const logger = require('../utils/logger');
+import HTTP from '../constants/httpStatus.js';
+import logger from '../utils/logger.js';
 
 // eslint-disable-next-line no-unused-vars
-function errorHandler(err, req, res, next) {
-    // Log the full error in development, summary only in production
+export function errorHandler(err, req, res, next) {
+    // Log the full error in dev, summary only in production
     if (process.env.NODE_ENV === 'development') {
         logger.error(err.stack || err.message);
     } else {
@@ -42,7 +45,7 @@ function errorHandler(err, req, res, next) {
         });
     }
 
-    // Mongoose duplicate key error
+    // Mongoose duplicate key error (code 11000)
     if (err.code === 11000) {
         const field = Object.keys(err.keyValue)[0];
         return res.status(HTTP.CONFLICT).json({
@@ -79,7 +82,7 @@ function errorHandler(err, req, res, next) {
         });
     }
 
-    // Custom application errors with statusCode
+    // Custom application errors (AppError or manually attached statusCode)
     if (err.statusCode) {
         return res.status(err.statusCode).json({
             success: false,
@@ -91,7 +94,7 @@ function errorHandler(err, req, res, next) {
         });
     }
 
-    // Fallback: unexpected server error
+    // Fallback: unexpected server error — hide message in production
     return res.status(HTTP.INTERNAL_ERROR).json({
         success: false,
         error: {
@@ -103,5 +106,3 @@ function errorHandler(err, req, res, next) {
         },
     });
 }
-
-module.exports = { errorHandler };

@@ -1,13 +1,11 @@
-/**
- * Auth Routes
- */
+/** Auth Routes */
 
-const { Router } = require('express');
-const authController = require('../controllers/auth.controller');
-const { authenticate } = require('../middleware/auth.middleware');
-const { validate } = require('../middleware/validate.middleware');
-const authValidator = require('../validators/auth.validator');
-const asyncWrapper = require('../utils/asyncWrapper');
+import { Router } from 'express';
+import * as authController from '../controllers/auth.controller.js';
+import { authenticate } from '../middleware/auth.middleware.js';
+import { validate } from '../middleware/validate.middleware.js';
+import * as authValidator from '../validators/auth.validator.js';
+import { asyncWrapper } from '../utils/asyncWrapper.js';
 
 const router = Router();
 
@@ -19,4 +17,4 @@ router.post('/logout', authenticate, asyncWrapper(authController.logout));
 router.post('/forgot-password', validate(authValidator.forgotPassword), asyncWrapper(authController.forgotPassword));
 router.post('/reset-password', validate(authValidator.resetPassword), asyncWrapper(authController.resetPassword));
 
-module.exports = router;
+export default router;

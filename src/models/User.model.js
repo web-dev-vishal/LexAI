@@ -2,15 +2,21 @@
  * User Model
  *
  * Core user document with:
- *   - bcrypt password hashing via pre-save hook
+ *   - bcrypt password hashing via pre-save hook (12 salt rounds)
  *   - Email verification and password reset token fields
  *   - Organization reference and RBAC role
  *   - Automatic password exclusion from JSON serialization
+ *
+ * Security notes:
+ *   - Password field uses `select: false` — never returned unless explicitly requested
+ *   - Sensitive fields (tokens, reset expiry) also excluded from default queries
+ *   - toJSON transform strips internal MongoDB fields (_id → id, no __v)
  */
 
-const mongoose = require('mongoose');
-const bcrypt = require('bcryptjs');
+import mongoose from 'mongoose';
+import bcrypt from 'bcryptjs';
 
+// Higher rounds = more secure but slower. 12 is the sweet spot for production.
 const SALT_ROUNDS = 12;
 
 const userSchema = new mongoose.Schema(
@@ -25,38 +31,39 @@ const userSchema = new mongoose.Schema(
             type: String,
             required: [true, 'Email is required'],
             unique: true,
-            lowercase: true,
+            lowercase: true,  // Normalize to prevent duplicate accounts with different casing
             trim: true,
         },
         password: {
             type: String,
             required: [true, 'Password is required'],
             minlength: 8,
-            select: false, // Never returned in queries by default
+            select: false, // CRITICAL: never returned in queries unless you call .select('+password')
         },
 
-        // Email verification
+        // ─── Email Verification ──────────────────────────────────
         emailVerified: { type: Boolean, default: false },
         emailVerifyToken: { type: String, select: false },
 
-        // Password reset
+        // ─── Password Reset ──────────────────────────────────────
         passwordResetToken: { type: String, select: false },
         passwordResetExpiry: { type: Date, select: false },
 
-        // Organization & role
+        // ─── Organization & Role ─────────────────────────────────
         organization: { type: mongoose.Schema.Types.ObjectId, ref: 'Organization' },
         role: {
             type: String,
             enum: ['admin', 'manager', 'viewer'],
-            default: 'viewer',
+            default: 'viewer', // Safest default — least privilege
         },
 
-        isActive: { type: Boolean, default: true },
+        isActive: { type: Boolean, default: true },  // Soft-disable without deleting
         lastLoginAt: Date,
     },
     {
-        timestamps: true,
+        timestamps: true,  // Adds createdAt and updatedAt automatically
         toJSON: {
+            // Clean up the response payload for API consumers
             transform(doc, ret) {
                 ret.id = ret._id;
                 delete ret._id;
@@ -72,10 +79,12 @@ const userSchema = new mongoose.Schema(
 );
 
 // ─── Indexes ──────────────────────────────────────────────────────
-userSchema.index({ email: 1 }, { unique: true });
-userSchema.index({ organization: 1 });
+userSchema.index({ email: 1 }, { unique: true });  // Fast email lookups + uniqueness
+userSchema.index({ organization: 1 });              // List users by org
 
 // ─── Pre-save Hook: Hash password only when modified ──────────────
+// This runs before every save() — skips hashing if password hasn't changed
+// (e.g., when updating name or role)
 userSchema.pre('save', async function (next) {
     if (!this.isModified('password')) return next();
 
@@ -92,8 +101,10 @@ userSchema.pre('save', async function (next) {
 
 /**
  * Compare a candidate password against the stored hash.
- * @param {string} candidatePassword
- * @returns {Promise<boolean>}
+ * Used during login — the hash comparison is timing-safe.
+ *
+ * @param {string} candidatePassword - Raw password from the login form
+ * @returns {Promise<boolean>} True if passwords match
  */
 userSchema.methods.comparePassword = async function (candidatePassword) {
     return bcrypt.compare(candidatePassword, this.password);
@@ -101,4 +112,4 @@ userSchema.methods.comparePassword = async function (candidatePassword) {
 
 const User = mongoose.model('User', userSchema);
 
-module.exports = User;
+export default User;

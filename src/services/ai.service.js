@@ -5,28 +5,31 @@
  * Implements:
  *   - Structured prompt building for contract analysis
  *   - Fallback model chain (primary → fallback)
- *   - Response validation and parsing
- *   - Retry with exponential backoff on rate limits
+ *   - Response validation and parsing with safe defaults
+ *   - Retry with exponential backoff on rate limits (429) and server errors (5xx)
+ *
+ * The AI output is always validated and sanitized — missing fields get
+ * safe defaults so the rest of the app never crashes on bad AI output.
  */
 
-const axios = require('axios');
-const logger = require('../utils/logger');
+import axios from 'axios';
+import logger from '../utils/logger.js';
 
 const MAX_RETRIES = 3;
-const INITIAL_RETRY_DELAY = 2000;
+const INITIAL_RETRY_DELAY = 2000; // 2 seconds, doubles each attempt
 
 /**
  * Analyze a contract using OpenRouter LLM.
- * Tries the primary model first; falls back if it fails.
+ * Tries the primary model first; falls back to a secondary model on failure.
  *
  * @param {string} content - Full contract text
  * @returns {Promise<object>} Structured analysis result
  */
-async function analyzeContract(content) {
+export async function analyzeContract(content) {
     const primaryModel = process.env.AI_PRIMARY_MODEL || 'meta-llama/llama-3.1-8b-instruct:free';
     const fallbackModel = process.env.AI_FALLBACK_MODEL || 'mistralai/mistral-7b-instruct:free';
 
-    // Try primary model
+    // Try primary model first
     try {
         const result = await callOpenRouter(content, primaryModel);
         return { ...result, aiModel: primaryModel };
@@ -34,7 +37,7 @@ async function analyzeContract(content) {
         logger.warn(`Primary model failed (${primaryModel}): ${err.message}. Trying fallback...`);
     }
 
-    // Try fallback model
+    // If primary fails, try fallback model
     try {
         const result = await callOpenRouter(content, fallbackModel);
         return { ...result, aiModel: fallbackModel };
@@ -45,7 +48,8 @@ async function analyzeContract(content) {
 }
 
 /**
- * Call OpenRouter API with retry logic.
+ * Call OpenRouter API with automatic retry on rate limits and server errors.
+ * Uses exponential backoff: 2s → 4s → 8s between retries.
  */
 async function callOpenRouter(content, model, attempt = 1) {
     const startTime = Date.now();
@@ -59,9 +63,9 @@ async function callOpenRouter(content, model, attempt = 1) {
                     { role: 'system', content: buildSystemPrompt() },
                     { role: 'user', content: buildUserPrompt(content) },
                 ],
-                temperature: 0.2,
+                temperature: 0.2,    // Low temperature for consistent, deterministic output
                 max_tokens: 4096,
-                response_format: { type: 'json_object' },
+                response_format: { type: 'json_object' }, // Force JSON output from the LLM
             },
             {
                 headers: {
@@ -70,20 +74,21 @@ async function callOpenRouter(content, model, attempt = 1) {
                     'HTTP-Referer': 'https://lexai.io',
                     'X-Title': 'LexAI Contract Analysis',
                 },
-                timeout: 60000,
+                timeout: 60000, // 60s timeout — LLM calls can be slow
             }
         );
 
         const rawContent = response.data?.choices?.[0]?.message?.content;
         if (!rawContent) throw new Error('Empty response from AI model');
 
+        // Parse and validate the structured JSON response
         const parsed = parseAIResponse(rawContent);
         parsed.tokensUsed = response.data?.usage?.total_tokens || 0;
         parsed.processingTimeMs = Date.now() - startTime;
 
         return parsed;
     } catch (err) {
-        // Retry on rate limit (429) or server errors (500+)
+        // Retry on rate limit (429) or server errors (500+) with exponential backoff
         const status = err.response?.status;
         if ((status === 429 || status >= 500) && attempt < MAX_RETRIES) {
             const delay = INITIAL_RETRY_DELAY * Math.pow(2, attempt - 1);
@@ -97,7 +102,7 @@ async function callOpenRouter(content, model, attempt = 1) {
 }
 
 /**
- * Build the system prompt for contract analysis.
+ * Build the system prompt — sets the AI's persona and constraints.
  */
 function buildSystemPrompt() {
     return `You are a legal contract analyst. Your job is to analyze contracts and return structured JSON. Never give legal advice. Always label output as "AI analysis, not legal advice." Always return valid JSON.`;
@@ -105,10 +110,13 @@ function buildSystemPrompt() {
 
 /**
  * Build the user prompt with the contract content.
+ * Truncates very long contracts to avoid hitting token limits.
  */
 function buildUserPrompt(content) {
-    // Truncate very long contracts to avoid token limits
-    const truncated = content.length > 15000 ? content.substring(0, 15000) + '\n\n[Content truncated for analysis]' : content;
+    // Cap at 15k chars to stay within model context windows
+    const truncated = content.length > 15000
+        ? content.substring(0, 15000) + '\n\n[Content truncated for analysis]'
+        : content;
 
     return `Analyze the following contract and return ONLY a JSON object with this exact structure:
 {
@@ -145,20 +153,24 @@ ${truncated}`;
 
 /**
  * Parse and validate the AI's JSON response.
+ * Handles multiple response formats: raw JSON, markdown code blocks,
+ * or JSON embedded in prose text.
+ *
+ * Missing/invalid fields get safe defaults so downstream code never crashes.
  */
 function parseAIResponse(rawContent) {
     let parsed;
 
     try {
-        // Try direct JSON parse
+        // Try direct JSON parse first — the happy path
         parsed = JSON.parse(rawContent);
     } catch {
-        // Try extracting JSON from markdown code blocks
+        // Try extracting JSON from markdown code blocks (```json ... ```)
         const jsonMatch = rawContent.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
         if (jsonMatch) {
             parsed = JSON.parse(jsonMatch[1]);
         } else {
-            // Last resort: find first { and last }
+            // Last resort: find first { and last } in the response
             const start = rawContent.indexOf('{');
             const end = rawContent.lastIndexOf('}');
             if (start !== -1 && end !== -1) {
@@ -169,9 +181,10 @@ function parseAIResponse(rawContent) {
         }
     }
 
-    // Validate required fields
+    // ─── Validate and apply safe defaults ──────────────────────
     if (typeof parsed.riskScore !== 'number') parsed.riskScore = 50;
     if (!['low', 'medium', 'high', 'critical'].includes(parsed.riskLevel)) {
+        // Derive risk level from score if the AI didn't provide a valid one
         parsed.riskLevel = parsed.riskScore <= 25 ? 'low'
             : parsed.riskScore <= 50 ? 'medium'
                 : parsed.riskScore <= 75 ? 'high'
@@ -190,8 +203,9 @@ function parseAIResponse(rawContent) {
 
 /**
  * Generate an AI explanation for a contract version diff.
+ * Uses a different model optimized for comparative analysis.
  */
-async function explainDiff(diffText, contractTitle) {
+export async function explainDiff(diffText, contractTitle) {
     const diffModel = 'google/gemma-2-9b-it:free';
 
     const prompt = `You are a legal contract analyst. Below is a diff between two versions of the contract titled "${contractTitle}". Analyze the changes and return a JSON object:
@@ -241,11 +255,9 @@ ${diffText}`;
     }
 }
 
+/**
+ * Promise-based sleep helper for retry backoff.
+ */
 function sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
-
-module.exports = {
-    analyzeContract,
-    explainDiff,
-};

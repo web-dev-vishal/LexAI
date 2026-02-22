@@ -1,23 +1,35 @@
 /**
  * Organization Service
+ *
  * Business logic for org creation, member management, and plan enforcement.
+ * Multi-tenancy is enforced at this layer — every operation is scoped to an org.
+ *
+ * Role hierarchy for permission checks:
+ *   admin > manager > viewer
+ *   - Admins: full org control (members, billing, settings)
+ *   - Managers: can manage contracts and invite members
+ *   - Viewers: read-only access
  */
 
-const Organization = require('../models/Organization.model');
-const User = require('../models/User.model');
-const { getPlanLimits } = require('../constants/plans');
+import Organization from '../models/Organization.model.js';
+import User from '../models/User.model.js';
+import { getPlanLimits } from '../constants/plans.js';
+import AppError from '../utils/AppError.js';
 
 /**
  * Create a new organization. The creating user becomes owner + admin.
+ * Users can only belong to one org at a time — enforced here.
  */
-async function createOrganization(userId, { name }) {
-    // Check if user already belongs to an org
+export async function createOrganization(userId, { name }) {
     const user = await User.findById(userId);
+
+    // Prevent users from being in multiple orgs
     if (user.organization) {
-        const error = new Error('You already belong to an organization. Leave your current org first.');
-        error.statusCode = 400;
-        error.code = 'ALREADY_IN_ORG';
-        throw error;
+        throw new AppError(
+            'You already belong to an organization. Leave your current org first.',
+            400,
+            'ALREADY_IN_ORG'
+        );
     }
 
     const org = await Organization.create({
@@ -26,7 +38,7 @@ async function createOrganization(userId, { name }) {
         members: [{ userId, role: 'admin', joinedAt: new Date() }],
     });
 
-    // Update user's org reference and role
+    // Update the user's org reference and role
     user.organization = org._id;
     user.role = 'admin';
     await user.save();
@@ -35,28 +47,23 @@ async function createOrganization(userId, { name }) {
 }
 
 /**
- * Get organization details with populated member info.
+ * Get organization details with populated member names and emails.
+ * Only accessible to members of the org.
  */
-async function getOrganization(orgId, userId) {
+export async function getOrganization(orgId, userId) {
     const org = await Organization.findById(orgId).lean();
 
     if (!org) {
-        const error = new Error('Organization not found.');
-        error.statusCode = 404;
-        error.code = 'NOT_FOUND';
-        throw error;
+        throw new AppError('Organization not found.', 404, 'NOT_FOUND');
     }
 
-    // Verify the requester is a member
+    // Verify the requester is actually a member of this org
     const isMember = org.members.some((m) => m.userId.toString() === userId.toString());
     if (!isMember) {
-        const error = new Error('You are not a member of this organization.');
-        error.statusCode = 403;
-        error.code = 'FORBIDDEN';
-        throw error;
+        throw new AppError('You are not a member of this organization.', 403, 'FORBIDDEN');
     }
 
-    // Populate member names
+    // Populate member names and emails for the response
     const memberIds = org.members.map((m) => m.userId);
     const users = await User.find({ _id: { $in: memberIds } }).select('name email').lean();
     const userMap = {};
@@ -74,21 +81,18 @@ async function getOrganization(orgId, userId) {
 }
 
 /**
- * Update organization details (name, settings).
+ * Update organization details (e.g., name).
+ * Only admins and managers can update org settings.
  */
-async function updateOrganization(orgId, userId, updates) {
+export async function updateOrganization(orgId, userId, updates) {
     const org = await Organization.findById(orgId);
     if (!org) {
-        const error = new Error('Organization not found.');
-        error.statusCode = 404;
-        throw error;
+        throw new AppError('Organization not found.', 404, 'NOT_FOUND');
     }
 
     const memberRole = org.getMemberRole(userId);
     if (!memberRole || !['admin', 'manager'].includes(memberRole)) {
-        const error = new Error('Only admins and managers can update organization details.');
-        error.statusCode = 403;
-        throw error;
+        throw new AppError('Only admins and managers can update organization details.', 403, 'FORBIDDEN');
     }
 
     if (updates.name) org.name = updates.name;
@@ -99,41 +103,34 @@ async function updateOrganization(orgId, userId, updates) {
 
 /**
  * Change a member's role within the organization.
+ * Only admins can change roles, and you can't change your own role.
  */
-async function changeMemberRole(orgId, targetUserId, newRole, requesterId) {
+export async function changeMemberRole(orgId, targetUserId, newRole, requesterId) {
     const org = await Organization.findById(orgId);
     if (!org) {
-        const error = new Error('Organization not found.');
-        error.statusCode = 404;
-        throw error;
+        throw new AppError('Organization not found.', 404, 'NOT_FOUND');
     }
 
     // Only admins can change roles
     const requesterRole = org.getMemberRole(requesterId);
     if (requesterRole !== 'admin') {
-        const error = new Error('Only admins can change member roles.');
-        error.statusCode = 403;
-        throw error;
+        throw new AppError('Only admins can change member roles.', 403, 'FORBIDDEN');
     }
 
-    // Can't change your own role
+    // Prevent admins from accidentally changing their own role
     if (requesterId.toString() === targetUserId.toString()) {
-        const error = new Error('You cannot change your own role.');
-        error.statusCode = 400;
-        throw error;
+        throw new AppError('You cannot change your own role.', 400, 'SELF_ROLE_CHANGE');
     }
 
     const memberIndex = org.members.findIndex((m) => m.userId.toString() === targetUserId);
     if (memberIndex === -1) {
-        const error = new Error('User is not a member of this organization.');
-        error.statusCode = 404;
-        throw error;
+        throw new AppError('User is not a member of this organization.', 404, 'NOT_FOUND');
     }
 
+    // Update role in both the org's members array and the user document
     org.members[memberIndex].role = newRole;
     await org.save();
 
-    // Also update the User document
     await User.findByIdAndUpdate(targetUserId, { role: newRole });
 
     return org;
@@ -141,50 +138,42 @@ async function changeMemberRole(orgId, targetUserId, newRole, requesterId) {
 
 /**
  * Remove a member from the organization.
+ * Admins can remove anyone except themselves (ownership transfer first).
  */
-async function removeMember(orgId, targetUserId, requesterId) {
+export async function removeMember(orgId, targetUserId, requesterId) {
     const org = await Organization.findById(orgId);
     if (!org) {
-        const error = new Error('Organization not found.');
-        error.statusCode = 404;
-        throw error;
+        throw new AppError('Organization not found.', 404, 'NOT_FOUND');
     }
 
+    // Can't remove yourself — transfer ownership first
     if (requesterId.toString() === targetUserId.toString()) {
-        const error = new Error('You cannot remove yourself. Transfer ownership first.');
-        error.statusCode = 400;
-        throw error;
+        throw new AppError('You cannot remove yourself. Transfer ownership first.', 400, 'SELF_REMOVAL');
     }
 
+    // Remove from org's members array
     org.members = org.members.filter((m) => m.userId.toString() !== targetUserId);
     await org.save();
 
-    // Remove org reference from the user
+    // Clear the user's org reference and reset role to viewer
     await User.findByIdAndUpdate(targetUserId, { organization: null, role: 'viewer' });
 
     return org;
 }
 
 /**
- * Check if adding a new member would exceed the plan limit.
+ * Check if adding a new member would exceed the plan's team size limit.
+ * Throws if the limit is reached — used by invitation service before creating invites.
  */
-async function checkMemberLimit(orgId) {
+export async function checkMemberLimit(orgId) {
     const org = await Organization.findById(orgId).lean();
     const planLimits = getPlanLimits(org.plan);
 
     if (planLimits.maxTeamMembers !== Infinity && org.members.length >= planLimits.maxTeamMembers) {
-        const error = new Error(`Your ${org.plan} plan allows a maximum of ${planLimits.maxTeamMembers} team members. Upgrade to add more.`);
-        error.statusCode = 403;
-        error.code = 'PLAN_LIMIT';
-        throw error;
+        throw new AppError(
+            `Your ${org.plan} plan allows a maximum of ${planLimits.maxTeamMembers} team members. Upgrade to add more.`,
+            403,
+            'PLAN_LIMIT'
+        );
     }
 }
-
-module.exports = {
-    createOrganization,
-    getOrganization,
-    updateOrganization,
-    changeMemberRole,
-    removeMember,
-    checkMemberLimit,
-};

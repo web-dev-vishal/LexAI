@@ -2,19 +2,18 @@
  * Request Logger Middleware
  *
  * Assigns a unique request ID to every incoming request and logs
- * the request/response cycle with Winston. The request ID is also
- * attached to error responses for tracing.
+ * the request/response cycle with Morgan → Winston pipeline.
  */
 
-const { v4: uuidv4 } = require('uuid');
-const morgan = require('morgan');
-const logger = require('../utils/logger');
+import { v4 as uuidv4 } from 'uuid';
+import morgan from 'morgan';
+import logger from '../utils/logger.js';
 
 /**
  * Attach a unique request ID to every request.
- * Downstream code can access it via req.requestId.
+ * Respects existing X-Request-ID headers from load balancers.
  */
-function attachRequestId(req, res, next) {
+export function attachRequestId(req, res, next) {
     req.requestId = req.headers['x-request-id'] || uuidv4();
     res.set('X-Request-ID', req.requestId);
     next();
@@ -22,8 +21,9 @@ function attachRequestId(req, res, next) {
 
 /**
  * Morgan HTTP logger that pipes output through Winston.
+ * Logs 4xx+ responses as warnings, everything else as info.
  */
-const httpLogger = morgan(
+export const httpLogger = morgan(
     (tokens, req, res) => {
         return JSON.stringify({
             requestId: req.requestId,
@@ -51,5 +51,3 @@ const httpLogger = morgan(
         },
     }
 );
-
-module.exports = { attachRequestId, httpLogger };

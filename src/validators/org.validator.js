@@ -1,38 +1,29 @@
 /**
- * Organization Validators
- * Joi schemas for org creation, invite, and role management.
+ * Org Validators — Joi schemas for org endpoints.
  */
 
-const Joi = require('joi');
+import Joi from 'joi';
 
-const createOrg = Joi.object({
+export const createOrg = Joi.object({
     name: Joi.string().trim().min(2).max(200).required()
         .messages({ 'any.required': 'Organization name is required' }),
 });
 
-const inviteMember = Joi.object({
+export const inviteMember = Joi.object({
     email: Joi.string().email().lowercase().trim().required(),
     role: Joi.string().valid('admin', 'manager', 'viewer').default('viewer'),
 });
 
-const acceptInvite = Joi.object({
+export const acceptInvite = Joi.object({
     token: Joi.string().required(),
     name: Joi.string().trim().min(2).max(100).optional(),
     password: Joi.string().min(8).max(128).optional(),
 });
 
-const updateMemberRole = Joi.object({
+export const updateMemberRole = Joi.object({
     role: Joi.string().valid('admin', 'manager', 'viewer').required(),
 });
 
-const updateOrg = Joi.object({
+export const updateOrg = Joi.object({
     name: Joi.string().trim().min(2).max(200).optional(),
 });
-
-module.exports = {
-    createOrg,
-    inviteMember,
-    acceptInvite,
-    updateMemberRole,
-    updateOrg,
-};
