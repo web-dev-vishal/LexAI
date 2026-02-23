@@ -15,12 +15,12 @@
  *   - Email enumeration is prevented in forgot-password (always returns success)
  */
 
+import env from '../config/env.js';
 import User from '../models/User.model.js';
 import { getRedisClient } from '../config/redis.js';
 import { signAccessToken, signRefreshToken, verifyToken, getRemainingTTL } from '../utils/tokenHelper.js';
 import { generateSecureToken } from '../utils/hashHelper.js';
 import * as emailService from './email.service.js';
-import env from '../config/env.js';
 import logger from '../utils/logger.js';
 import AppError from '../utils/AppError.js';
 
