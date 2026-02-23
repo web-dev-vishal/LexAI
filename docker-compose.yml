@@ -6,9 +6,10 @@ services:
       dockerfile: Dockerfile
     container_name: lexai-api
     ports:
-      - "3000:3000"
+      - "3100:3100"
     environment:
       NODE_ENV: development
+      PORT: 3100
       MONGO_URI: mongodb://mongodb:27017/lexai
       REDIS_HOST: redis
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
@@ -22,17 +23,21 @@ services:
       EMAIL_FROM: ${EMAIL_FROM}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
     depends_on:
-      - mongodb
-      - redis
-      - rabbitmq
-    volumes:
-      - ./src:/app/src
+      mongodb:
+        condition: service_started
+      redis:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - lexai-network
     restart: unless-stopped
     stop_grace_period: 30s
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3100/health"]
       interval: 30s
       timeout: 10s
+      start_period: 20s
       retries: 3
 
   # ─── RabbitMQ Worker ──────────────────────────────────────────
@@ -60,9 +65,14 @@ services:
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
     depends_on:
-      - mongodb
-      - redis
-      - rabbitmq
+      mongodb:
+        condition: service_started
+      redis:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - lexai-network
     restart: unless-stopped
     stop_grace_period: 30s
 
@@ -74,6 +84,8 @@ services:
       - "27017:27017"
     volumes:
       - mongodb_data:/data/db
+    networks:
+      - lexai-network
     restart: unless-stopped
 
   # ─── Redis ────────────────────────────────────────────────────
@@ -85,6 +97,8 @@ services:
     command: redis-server --appendonly yes
     volumes:
       - redis_data:/data
+    networks:
+      - lexai-network
     restart: unless-stopped
 
   # ─── RabbitMQ ─────────────────────────────────────────────────
@@ -99,7 +113,19 @@ services:
       RABBITMQ_DEFAULT_PASS: guest
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - lexai-network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      interval: 15s
+      timeout: 10s
+      start_period: 30s
+      retries: 5
+
+networks:
+  lexai-network:
+    driver: bridge
 
 volumes:
   mongodb_data:

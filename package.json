@@ -1,7 +1,7 @@
 {
   "name": "lexai-backend",
   "version": "1.1.0",
-  "description": "LexAI — AI-Powered Contract Intelligence SaaS Backend",
+  "description": "LexAI_AI Powered Contract Intelligence SaaS Backend",
   "main": "server.js",
   "type": "module",
   "engines": {
