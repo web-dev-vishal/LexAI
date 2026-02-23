@@ -20,6 +20,7 @@ import { getRedisClient } from '../config/redis.js';
 import { signAccessToken, signRefreshToken, verifyToken, getRemainingTTL } from '../utils/tokenHelper.js';
 import { generateSecureToken } from '../utils/hashHelper.js';
 import * as emailService from './email.service.js';
+import env from '../config/env.js';
 import logger from '../utils/logger.js';
 import AppError from '../utils/AppError.js';
 
@@ -96,8 +97,8 @@ export async function loginUser({ email, password }) {
 
     // Issue tokens — access token contains org/role for auth checks without DB hits
     const accessPayload = { userId: user._id, orgId: user.organization, role: user.role };
-    const access = signAccessToken(accessPayload, process.env.JWT_ACCESS_SECRET, process.env.JWT_ACCESS_EXPIRY);
-    const refresh = signRefreshToken({ userId: user._id }, process.env.JWT_REFRESH_SECRET, process.env.JWT_REFRESH_EXPIRY);
+    const access = signAccessToken(accessPayload, env.JWT_ACCESS_SECRET, env.JWT_ACCESS_EXPIRY);
+    const refresh = signRefreshToken({ userId: user._id }, env.JWT_REFRESH_SECRET, env.JWT_REFRESH_EXPIRY);
 
     // Track last login for admin dashboards
     user.lastLoginAt = new Date();
@@ -118,7 +119,7 @@ export async function loginUser({ email, password }) {
  * If a blacklisted token is replayed, it may indicate token theft.
  */
 export async function refreshAccessToken(refreshTokenStr) {
-    const decoded = verifyToken(refreshTokenStr, process.env.JWT_REFRESH_SECRET);
+    const decoded = verifyToken(refreshTokenStr, env.JWT_REFRESH_SECRET);
     const redis = getRedisClient();
 
     // Check if this refresh token was already used (token rotation enforcement)
@@ -143,8 +144,8 @@ export async function refreshAccessToken(refreshTokenStr) {
 
     // Issue brand new token pair
     const accessPayload = { userId: user._id, orgId: user.organization, role: user.role };
-    const newAccess = signAccessToken(accessPayload, process.env.JWT_ACCESS_SECRET, process.env.JWT_ACCESS_EXPIRY);
-    const newRefresh = signRefreshToken({ userId: user._id }, process.env.JWT_REFRESH_SECRET, process.env.JWT_REFRESH_EXPIRY);
+    const newAccess = signAccessToken(accessPayload, env.JWT_ACCESS_SECRET, env.JWT_ACCESS_EXPIRY);
+    const newRefresh = signRefreshToken({ userId: user._id }, env.JWT_REFRESH_SECRET, env.JWT_REFRESH_EXPIRY);
 
     return { accessToken: newAccess.token, refreshToken: newRefresh.token };
 }

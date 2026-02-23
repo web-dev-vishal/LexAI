@@ -28,6 +28,8 @@ function buildRedisConfig(env) {
         host: env.REDIS_HOST,
         port: env.REDIS_PORT,
         maxRetriesPerRequest: 3,   // Fail after 3 retries per individual command
+        connectTimeout: 10000,     // 10s connection timeout — avoid indefinite hangs
+        enableReadyCheck: true,    // Wait for Redis to confirm it's fully loaded before commands
         retryStrategy(times) {
             // Exponential backoff: 200ms, 400ms, 600ms... capped at 5s
             const delay = Math.min(times * 200, 5000);

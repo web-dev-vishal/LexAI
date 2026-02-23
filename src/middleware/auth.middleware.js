@@ -10,6 +10,7 @@ import { verifyToken } from '../utils/tokenHelper.js';
 import { getRedisClient } from '../config/redis.js';
 import { sendError } from '../utils/apiResponse.js';
 import HTTP from '../constants/httpStatus.js';
+import env from '../config/env.js';
 import logger from '../utils/logger.js';
 
 /**
@@ -29,7 +30,7 @@ export async function authenticate(req, res, next) {
         }
 
         const token = authHeader.split(' ')[1];
-        const decoded = verifyToken(token, process.env.JWT_ACCESS_SECRET);
+        const decoded = verifyToken(token, env.JWT_ACCESS_SECRET);
 
         // Check if token has been blacklisted (user logged out)
         const redis = getRedisClient();

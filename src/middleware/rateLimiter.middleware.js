@@ -22,6 +22,17 @@ export function rateLimiter(options = {}) {
     const max = options.max || parseInt(process.env.RATE_LIMIT_MAX) || 100;
     const windowSec = Math.ceil(windowMs / 1000);
 
+    // Lua script: atomically increment and set expiry on first use.
+    // Prevents the race condition where a crash between INCR and EXPIRE
+    // leaves a key without a TTL, permanently blocking requests.
+    const RATE_LIMIT_SCRIPT = `
+        local current = redis.call('INCR', KEYS[1])
+        if current == 1 then
+            redis.call('EXPIRE', KEYS[1], ARGV[1])
+        end
+        return current
+    `;
+
     return async (req, res, next) => {
         try {
             const redis = getRedisClient();
@@ -29,10 +40,8 @@ export function rateLimiter(options = {}) {
             const windowKey = Math.floor(Date.now() / windowMs);
             const key = `ratelimit:${ip}:${windowKey}`;
 
-            const current = await redis.incr(key);
-            if (current === 1) {
-                await redis.expire(key, windowSec);
-            }
+            // Atomic increment + expire via Lua — no race condition
+            const current = await redis.eval(RATE_LIMIT_SCRIPT, 1, key, windowSec);
 
             const resetTime = Math.ceil(((windowKey + 1) * windowMs) / 1000);
 

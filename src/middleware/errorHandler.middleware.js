@@ -12,12 +12,13 @@
  */
 
 import HTTP from '../constants/httpStatus.js';
+import env from '../config/env.js';
 import logger from '../utils/logger.js';
 
 // eslint-disable-next-line no-unused-vars
 export function errorHandler(err, req, res, next) {
     // Log the full error in dev, summary only in production
-    if (process.env.NODE_ENV === 'development') {
+    if (env.NODE_ENV === 'development') {
         logger.error(err.stack || err.message);
     } else {
         logger.error(`${err.name}: ${err.message}`, {
@@ -99,7 +100,7 @@ export function errorHandler(err, req, res, next) {
         success: false,
         error: {
             code: 'INTERNAL_ERROR',
-            message: process.env.NODE_ENV === 'production'
+            message: env.NODE_ENV === 'production'
                 ? 'An unexpected error occurred.'
                 : err.message,
             requestId: req.requestId,

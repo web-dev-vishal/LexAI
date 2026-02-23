@@ -88,9 +88,10 @@ const analysisSchema = new mongoose.Schema(
 );
 
 // ─── Indexes ──────────────────────────────────────────────────────
-analysisSchema.index({ contractId: 1, version: 1 });  // Look up analysis by contract+version
-analysisSchema.index({ orgId: 1 });                    // Org-scoped queries
-analysisSchema.index({ status: 1 });                   // Find pending/processing jobs
+analysisSchema.index({ contractId: 1, version: 1 });       // Look up analysis by contract+version
+analysisSchema.index({ orgId: 1, createdAt: -1 });         // Paginated org-scoped analysis listing
+analysisSchema.index({ orgId: 1, status: 1 });             // Find org-specific pending/processing jobs
+analysisSchema.index({ status: 1 });                        // Global status queries (admin dashboard)
 
 const Analysis = mongoose.model('Analysis', analysisSchema);
 

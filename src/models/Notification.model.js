@@ -53,8 +53,14 @@ const notificationSchema = new mongoose.Schema(
 );
 
 // ─── Indexes ──────────────────────────────────────────────────────
-notificationSchema.index({ orgId: 1, createdAt: -1 });  // Org notification feed
+notificationSchema.index({ orgId: 1, createdAt: -1 });  // Org notification feed (newest first)
 notificationSchema.index({ userId: 1, read: 1 });       // User's unread notifications
+notificationSchema.index({ type: 1, createdAt: -1 });   // Filter by notification type
+
+// TTL index — auto-delete notifications older than 30 days to prevent unbounded growth
+// Same pattern used by AuditLog (90 days). Adjust the value if you need longer retention.
+const THIRTY_DAYS_IN_SECONDS = 30 * 24 * 60 * 60; // 2,592,000
+notificationSchema.index({ createdAt: 1 }, { expireAfterSeconds: THIRTY_DAYS_IN_SECONDS });
 
 const Notification = mongoose.model('Notification', notificationSchema);
 

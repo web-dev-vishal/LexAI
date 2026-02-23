@@ -23,6 +23,7 @@ import healthRoutes from './routes/health.routes.js';
 import { rateLimiter } from './middleware/rateLimiter.middleware.js';
 import { errorHandler } from './middleware/errorHandler.middleware.js';
 import { attachRequestId, httpLogger } from './middleware/requestLogger.middleware.js';
+import env from './config/env.js';
 
 export default function createApp() {
     const app = express();
@@ -30,7 +31,7 @@ export default function createApp() {
     // ─── Security Middleware ────────────────────────────────────────
     app.use(helmet());
 
-    const allowedOrigins = (process.env.ALLOWED_ORIGINS || '').split(',').map((o) => o.trim());
+    const allowedOrigins = env.ALLOWED_ORIGINS.split(',').map((o) => o.trim());
     app.use(cors({
         origin: allowedOrigins,
         credentials: true,
@@ -57,8 +58,7 @@ export default function createApp() {
     app.use('/health', healthRoutes);
 
     // ─── API Routes ─────────────────────────────────────────────────
-    const apiVersion = process.env.API_VERSION || 'v1';
-    app.use(`/api/${apiVersion}`, routes);
+    app.use(`/api/${env.API_VERSION}`, routes);
 
     // ─── 404 Handler ────────────────────────────────────────────────
     app.use((req, res) => {

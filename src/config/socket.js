@@ -85,11 +85,19 @@ export function initSocket(httpServer, env, pubClient, subClient) {
         socket.join(`user:${socket.userId}`);
 
         // Join org room on request — used for org-wide broadcasts
+        // Security: only allow joining the user's own org room
         socket.on('join:org', ({ orgId }) => {
-            if (orgId) {
-                socket.join(`org:${orgId}`);
-                logger.debug(`Socket ${socket.id} joined room org:${orgId}`);
+            if (!orgId) return;
+
+            // Prevent cross-org eavesdropping — user can only join their own org room
+            if (orgId.toString() !== socket.orgId?.toString()) {
+                logger.warn(`Socket ${socket.id} attempted to join unauthorized org room: ${orgId}`);
+                socket.emit('error', { message: 'You can only join your own organization room.' });
+                return;
             }
+
+            socket.join(`org:${orgId}`);
+            logger.debug(`Socket ${socket.id} joined room org:${orgId}`);
         });
 
         // Admin users automatically join the admin room for platform-wide events

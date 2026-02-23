@@ -26,7 +26,8 @@ const RETRY_DELAY_MS = 3000; // Base delay, multiplied by attempt number
 export async function connectDB(uri, attempt = 1) {
     try {
         await mongoose.connect(uri, {
-            maxPoolSize: 10,                  // Max concurrent connections in the pool
+            maxPoolSize: 25,                  // Max concurrent connections in the pool (scaled for production)
+            minPoolSize: 5,                   // Keep warm connections ready to avoid cold-start latency
             serverSelectionTimeoutMS: 5000,   // Fail fast if no server is reachable
             socketTimeoutMS: 45000,           // Kill stuck queries after 45s
         });

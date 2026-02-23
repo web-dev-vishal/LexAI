@@ -78,11 +78,11 @@ async function startServer() {
                 process.exit(0);
             });
 
-            // Force exit after 10 seconds
+            // Force exit after 30 seconds (matches Docker stop_grace_period)
             setTimeout(() => {
                 logger.error('Graceful shutdown timed out. Forcing exit.');
                 process.exit(1);
-            }, 10000);
+            }, 30000);
         };
 
         process.on('SIGTERM', () => shutdown('SIGTERM'));
