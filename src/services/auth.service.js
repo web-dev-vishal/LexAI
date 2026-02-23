@@ -42,12 +42,12 @@ export async function registerUser({ name, email, password }) {
     const user = await User.create({
         name,
         email,
-        password, // Mongoose pre-save hook will hash this before writing to DB
+        password, // Mongoose pre save hook will hash this before writing to DB
         emailVerifyToken,
         emailVerified: false,
     });
 
-    // Send verification email — fire-and-forget so registration isn't blocked
+    // Send verification email fire and forget so registration isn't blocked
     emailService.sendVerificationEmail(user.email, emailVerifyToken).catch((err) => {
         logger.error('Failed to send verification email:', err.message);
     });
