@@ -9,7 +9,7 @@ import HTTP from '../constants/httpStatus.js';
 
 /** POST /analyses */
 export async function requestAnalysis(req, res) {
-    const orgId = req.headers['x-org-id'] || req.user.orgId;
+    const { orgId } = req;
 
     const result = await analysisService.requestAnalysis({
         contractId: req.body.contractId,
@@ -35,14 +35,14 @@ export async function requestAnalysis(req, res) {
 
 /** GET /analyses/:id */
 export async function getAnalysis(req, res) {
-    const orgId = req.headers['x-org-id'] || req.user.orgId;
+    const { orgId } = req;
     const analysis = await analysisService.getAnalysis(req.params.id, orgId);
     sendSuccess(res, { data: { analysis } });
 }
 
 /** GET /analyses/contract/:contractId */
 export async function getAnalysesByContract(req, res) {
-    const orgId = req.headers['x-org-id'] || req.user.orgId;
+    const { orgId } = req;
     const analyses = await analysisService.getAnalysesByContract(req.params.contractId, orgId);
     sendSuccess(res, { data: { analyses } });
 }

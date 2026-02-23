@@ -21,6 +21,7 @@ import cookieParser from 'cookie-parser';
 import routes from './routes/index.js';
 import healthRoutes from './routes/health.routes.js';
 import { rateLimiter } from './middleware/rateLimiter.middleware.js';
+import { xssSanitizer } from './middleware/sanitize.middleware.js';
 import { errorHandler } from './middleware/errorHandler.middleware.js';
 import { attachRequestId, httpLogger } from './middleware/requestLogger.middleware.js';
 import env from './config/env.js';
@@ -36,7 +37,7 @@ export default function createApp() {
         origin: allowedOrigins,
         credentials: true,
         methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
-        allowedHeaders: ['Content-Type', 'Authorization', 'x-org-id', 'x-request-id'],
+        allowedHeaders: ['Content-Type', 'Authorization', 'x-request-id'],
     }));
 
     // Prevent NoSQL injection
@@ -46,6 +47,9 @@ export default function createApp() {
     app.use(express.json({ limit: '10mb' }));
     app.use(express.urlencoded({ extended: true }));
     app.use(cookieParser());
+
+    // ─── XSS Sanitization ───────────────────────────────────────────
+    app.use(xssSanitizer);
 
     // ─── Request Logging ────────────────────────────────────────────
     app.use(attachRequestId);

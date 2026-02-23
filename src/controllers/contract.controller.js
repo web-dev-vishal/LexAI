@@ -10,13 +10,7 @@ import HTTP from '../constants/httpStatus.js';
 
 /** POST /contracts — supports file upload (multer) or raw text */
 export async function uploadContract(req, res) {
-    const orgId = req.headers['x-org-id'] || req.user.orgId;
-    if (!orgId) {
-        return res.status(HTTP.BAD_REQUEST).json({
-            success: false,
-            error: { code: 'MISSING_ORG', message: 'x-org-id header or orgId in token is required.' },
-        });
-    }
+    const { orgId } = req;
 
     let tags = req.body.tags;
     if (typeof tags === 'string') {
@@ -50,49 +44,49 @@ export async function uploadContract(req, res) {
 
 /** GET /contracts */
 export async function listContracts(req, res) {
-    const orgId = req.headers['x-org-id'] || req.user.orgId;
+    const { orgId } = req;
     const { contracts, meta } = await contractService.listContracts(orgId, req.query);
     sendSuccess(res, { data: { contracts, meta } });
 }
 
 /** GET /contracts/:id */
 export async function getContract(req, res) {
-    const orgId = req.headers['x-org-id'] || req.user.orgId;
+    const { orgId } = req;
     const contract = await contractService.getContractById(req.params.id, orgId);
     sendSuccess(res, { data: { contract } });
 }
 
 /** PATCH /contracts/:id */
 export async function updateContract(req, res) {
-    const orgId = req.headers['x-org-id'] || req.user.orgId;
+    const { orgId } = req;
     const contract = await contractService.updateContract(req.params.id, orgId, req.body);
     sendSuccess(res, { data: { contract } });
 }
 
 /** POST /contracts/:id/versions */
 export async function uploadVersion(req, res) {
-    const orgId = req.headers['x-org-id'] || req.user.orgId;
+    const { orgId } = req;
     const result = await contractService.addVersion(req.params.id, orgId, req.user.userId, req.body);
     sendSuccess(res, { statusCode: HTTP.CREATED, data: result });
 }
 
 /** GET /contracts/:id/versions */
 export async function getVersions(req, res) {
-    const orgId = req.headers['x-org-id'] || req.user.orgId;
+    const { orgId } = req;
     const versions = await contractService.getVersions(req.params.id, orgId);
     sendSuccess(res, { data: { versions } });
 }
 
 /** DELETE /contracts/:id */
 export async function deleteContract(req, res) {
-    const orgId = req.headers['x-org-id'] || req.user.orgId;
+    const { orgId } = req;
     await contractService.deleteContract(req.params.id, orgId, req.user.userId);
     sendSuccess(res, { message: 'Contract deleted successfully.' });
 }
 
 /** GET /contracts/:id/audit */
 export async function getContractAudit(req, res) {
-    const orgId = req.headers['x-org-id'] || req.user.orgId;
+    const { orgId } = req;
     const logs = await auditService.getContractAuditLogs(req.params.id, orgId);
     sendSuccess(res, { data: { logs } });
 }

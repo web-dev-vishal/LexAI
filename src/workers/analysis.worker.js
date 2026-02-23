@@ -19,6 +19,20 @@ import logger from '../utils/logger.js';
 const ANALYSIS_QUEUE = process.env.ANALYSIS_QUEUE || 'lexai.analysis.queue';
 const CACHE_TTL = 86400; // 24 hours
 const MAX_RETRIES = 3;
+const JOB_TIMEOUT_MS = 90000; // 90 seconds — failsafe if AI API hangs
+
+/**
+ * Wrap a promise with a timeout.
+ * Rejects with a clear error if the promise doesn't resolve in time.
+ */
+function withTimeout(promise, ms, jobId) {
+    return Promise.race([
+        promise,
+        new Promise((_, reject) =>
+            setTimeout(() => reject(new Error(`Job ${jobId} timed out after ${ms / 1000}s`)), ms)
+        ),
+    ]);
+}
 
 /** Start consuming messages from the analysis queue. */
 export async function startAnalysisWorker() {

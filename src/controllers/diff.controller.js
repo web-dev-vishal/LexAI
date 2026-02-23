@@ -8,7 +8,7 @@ import HTTP from '../constants/httpStatus.js';
 
 /** POST /contracts/:id/compare */
 export async function compareVersions(req, res) {
-    const orgId = req.headers['x-org-id'] || req.user.orgId;
+    const { orgId } = req;
 
     const result = await diffService.compareVersions({
         contractId: req.params.id,

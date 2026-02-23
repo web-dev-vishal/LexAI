@@ -79,11 +79,44 @@ export async function verifyEmail(token) {
  * Performs three checks: credentials, email verified, account active.
  */
 export async function loginUser({ email, password }) {
+    const redis = getRedisClient();
+    const lockoutKey = `login:lockout:${email.toLowerCase()}`;
+    const failKey = `login:fail:${email.toLowerCase()}`;
+    const MAX_ATTEMPTS = 5;
+    const LOCKOUT_SECONDS = 900; // 15 minutes
+
+    // Check if account is currently locked out
+    const isLocked = await redis.exists(lockoutKey);
+    if (isLocked) {
+        const ttl = await redis.ttl(lockoutKey);
+        throw new AppError(
+            `Account temporarily locked due to too many failed attempts. Try again in ${Math.ceil(ttl / 60)} minutes.`,
+            429,
+            'ACCOUNT_LOCKED'
+        );
+    }
+
     // Explicitly select password since it has select: false in the schema
     const user = await User.findOne({ email }).select('+password');
 
     // Intentionally vague error message — don't reveal whether email exists
     if (!user || !(await user.comparePassword(password))) {
+        // Increment failed attempt counter
+        const failures = await redis.incr(failKey);
+        await redis.expire(failKey, LOCKOUT_SECONDS);
+
+        if (failures >= MAX_ATTEMPTS) {
+            // Lock the account and clear the counter
+            await redis.set(lockoutKey, '1', 'EX', LOCKOUT_SECONDS);
+            await redis.del(failKey);
+            logger.warn(`Account locked after ${MAX_ATTEMPTS} failed login attempts: ${email}`);
+            throw new AppError(
+                'Account temporarily locked due to too many failed attempts. Try again in 15 minutes.',
+                429,
+                'ACCOUNT_LOCKED'
+            );
+        }
+
         throw new AppError('Invalid email or password.', 401, 'INVALID_CREDENTIALS');
     }
 
@@ -94,6 +127,10 @@ export async function loginUser({ email, password }) {
     if (!user.isActive) {
         throw new AppError('Your account has been deactivated.', 403, 'ACCOUNT_DEACTIVATED');
     }
+
+    // Clear failed attempt counter on successful login
+    await redis.del(failKey);
+    await redis.del(lockoutKey);
 
     // Issue tokens — access token contains org/role for auth checks without DB hits
     const accessPayload = { userId: user._id, orgId: user.organization, role: user.role };

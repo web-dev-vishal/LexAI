@@ -12,6 +12,7 @@
  */
 
 import nodemailer from 'nodemailer';
+import env from '../config/env.js';
 import logger from '../utils/logger.js';
 
 // Module-level transporter — initialized once, reused for all emails
@@ -19,16 +20,16 @@ let transporter = null;
 
 /**
  * Initialize the email transporter. Called once on first email send.
- * Uses SMTP config from environment variables.
+ * Uses SMTP config from validated environment variables.
  */
 function initEmailTransporter() {
   transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: parseInt(process.env.SMTP_PORT) || 587,
+    host: env.SMTP_HOST,
+    port: parseInt(env.SMTP_PORT) || 587,
     secure: false, // true for port 465 (SSL), false for 587 (STARTTLS)
     auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
+      user: env.SMTP_USER,
+      pass: env.SMTP_PASS,
     },
   });
 
@@ -42,7 +43,7 @@ async function sendEmail({ to, subject, html, text }) {
   if (!transporter) initEmailTransporter();
 
   const info = await transporter.sendMail({
-    from: process.env.EMAIL_FROM || 'noreply@lexai.io',
+    from: env.EMAIL_FROM || 'noreply@lexai.io',
     to,
     subject,
     html,
@@ -50,7 +51,7 @@ async function sendEmail({ to, subject, html, text }) {
   });
 
   // In dev with Ethereal, log the preview URL for easy testing
-  if (process.env.NODE_ENV !== 'production') {
+  if (env.NODE_ENV !== 'production') {
     const previewUrl = nodemailer.getTestMessageUrl(info);
     if (previewUrl) {
       logger.info(`📧 Email preview: ${previewUrl}`);
@@ -65,7 +66,7 @@ async function sendEmail({ to, subject, html, text }) {
  * Send email verification link to a newly registered user.
  */
 export async function sendVerificationEmail(email, token) {
-  const verifyUrl = `${process.env.ALLOWED_ORIGINS?.split(',')[0] || 'http://localhost:3000'}/verify-email?token=${token}`;
+  const verifyUrl = `${env.ALLOWED_ORIGINS?.split(',')[0] || 'http://localhost:3000'}/verify-email?token=${token}`;
 
   return sendEmail({
     to: email,
@@ -87,7 +88,7 @@ export async function sendVerificationEmail(email, token) {
  * Send password reset link with 1-hour expiry.
  */
 export async function sendPasswordResetEmail(email, token) {
-  const resetUrl = `${process.env.ALLOWED_ORIGINS?.split(',')[0] || 'http://localhost:3000'}/reset-password?token=${token}`;
+  const resetUrl = `${env.ALLOWED_ORIGINS?.split(',')[0] || 'http://localhost:3000'}/reset-password?token=${token}`;
 
   return sendEmail({
     to: email,
@@ -109,7 +110,7 @@ export async function sendPasswordResetEmail(email, token) {
  * Send team invitation email with accept link.
  */
 export async function sendInvitationEmail(email, { token, orgName, role, expiresAt }) {
-  const acceptUrl = `${process.env.ALLOWED_ORIGINS?.split(',')[0] || 'http://localhost:3000'}/accept-invite?token=${token}`;
+  const acceptUrl = `${env.ALLOWED_ORIGINS?.split(',')[0] || 'http://localhost:3000'}/accept-invite?token=${token}`;
 
   return sendEmail({
     to: email,

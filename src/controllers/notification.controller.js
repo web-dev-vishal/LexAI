@@ -49,9 +49,9 @@ export async function listNotifications(req, res) {
  * Get the count of unread notifications for badge display.
  */
 export async function getUnreadCount(req, res) {
-    const { orgId } = req.user;
+    const { orgId, userId } = req.user;
 
-    const count = await Notification.countDocuments({ orgId, read: false });
+    const count = await Notification.countDocuments({ orgId, userId, read: false });
 
     sendSuccess(res, { unreadCount: count });
 }
@@ -85,10 +85,10 @@ export async function markAsRead(req, res) {
  * Mark all notifications as read for the user's org.
  */
 export async function markAllAsRead(req, res) {
-    const { orgId } = req.user;
+    const { orgId, userId } = req.user;
 
     const result = await Notification.updateMany(
-        { orgId, read: false },
+        { orgId, userId, read: false },
         { read: true, readAt: new Date() }
     );
 
