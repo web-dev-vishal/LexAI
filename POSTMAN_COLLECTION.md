@@ -1,6 +1,6 @@
 # LexAI — Postman API Reference
 
-> **Base URL:** `http://localhost:3000/api/v1`
+> **Base URL:** `http://localhost:3100/api/v1`
 > **Content-Type:** `application/json` (unless uploading files)
 
 ---
@@ -12,7 +12,7 @@
 | | |
 |---|---|
 | **Method** | `POST` |
-| **URL** | `http://localhost:3000/api/v1/auth/register` |
+| **URL** | `http://localhost:3100/api/v1/auth/register` |
 | **Headers** | `Content-Type: application/json` |
 
 **Request Body:**
@@ -60,7 +60,7 @@
 | | |
 |---|---|
 | **Method** | `POST` |
-| **URL** | `http://localhost:3000/api/v1/auth/verify-email` |
+| **URL** | `http://localhost:3100/api/v1/auth/verify-email` |
 | **Headers** | `Content-Type: application/json` |
 
 **Request Body:**
@@ -97,7 +97,7 @@
 | | |
 |---|---|
 | **Method** | `POST` |
-| **URL** | `http://localhost:3000/api/v1/auth/login` |
+| **URL** | `http://localhost:3100/api/v1/auth/login` |
 | **Headers** | `Content-Type: application/json` |
 
 **Request Body:**
@@ -146,7 +146,7 @@
 | | |
 |---|---|
 | **Method** | `POST` |
-| **URL** | `http://localhost:3000/api/v1/auth/refresh-token` |
+| **URL** | `http://localhost:3100/api/v1/auth/refresh-token` |
 | **Headers** | `Content-Type: application/json` |
 | **Cookies** | `refreshToken=<token>` (auto-sent by browser) |
 
@@ -180,7 +180,7 @@
 | | |
 |---|---|
 | **Method** | `POST` |
-| **URL** | `http://localhost:3000/api/v1/auth/logout` |
+| **URL** | `http://localhost:3100/api/v1/auth/logout` |
 | **Headers** | `Authorization: Bearer <accessToken>` |
 
 **Request Body:** _None_
@@ -200,7 +200,7 @@
 | | |
 |---|---|
 | **Method** | `POST` |
-| **URL** | `http://localhost:3000/api/v1/auth/forgot-password` |
+| **URL** | `http://localhost:3100/api/v1/auth/forgot-password` |
 | **Headers** | `Content-Type: application/json` |
 
 **Request Body:**
@@ -225,7 +225,7 @@
 | | |
 |---|---|
 | **Method** | `POST` |
-| **URL** | `http://localhost:3000/api/v1/auth/reset-password` |
+| **URL** | `http://localhost:3100/api/v1/auth/reset-password` |
 | **Headers** | `Content-Type: application/json` |
 
 **Request Body:**
@@ -253,7 +253,7 @@
 | | |
 |---|---|
 | **Method** | `GET` |
-| **URL** | `http://localhost:3000/api/v1/users/me` |
+| **URL** | `http://localhost:3100/api/v1/users/me` |
 | **Headers** | `Authorization: Bearer <accessToken>` |
 
 **Success Response (200):**
@@ -291,7 +291,7 @@
 | | |
 |---|---|
 | **Method** | `PATCH` |
-| **URL** | `http://localhost:3000/api/v1/users/me` |
+| **URL** | `http://localhost:3100/api/v1/users/me` |
 | **Headers** | `Authorization: Bearer <accessToken>`, `Content-Type: application/json` |
 
 **Request Body:**
@@ -324,7 +324,7 @@
 | | |
 |---|---|
 | **Method** | `PATCH` |
-| **URL** | `http://localhost:3000/api/v1/users/me/password` |
+| **URL** | `http://localhost:3100/api/v1/users/me/password` |
 | **Headers** | `Authorization: Bearer <accessToken>`, `Content-Type: application/json` |
 
 **Request Body:**
@@ -361,7 +361,7 @@
 | | |
 |---|---|
 | **Method** | `GET` |
-| **URL** | `http://localhost:3000/api/v1/users/65a1b2c3d4e5f60012345678` |
+| **URL** | `http://localhost:3100/api/v1/users/65a1b2c3d4e5f60012345678` |
 | **Headers** | `Authorization: Bearer <adminAccessToken>` |
 
 **Success Response (200):**
@@ -392,7 +392,7 @@
 | | |
 |---|---|
 | **Method** | `POST` |
-| **URL** | `http://localhost:3000/api/v1/orgs` |
+| **URL** | `http://localhost:3100/api/v1/orgs` |
 | **Headers** | `Authorization: Bearer <accessToken>`, `Content-Type: application/json` |
 
 **Request Body:**
@@ -425,7 +425,7 @@
 | | |
 |---|---|
 | **Method** | `GET` |
-| **URL** | `http://localhost:3000/api/v1/orgs/65a1b2c3d4e5f60012345679` |
+| **URL** | `http://localhost:3100/api/v1/orgs/65a1b2c3d4e5f60012345679` |
 | **Headers** | `Authorization: Bearer <accessToken>` |
 
 **Success Response (200):**
@@ -454,7 +454,7 @@
 | | |
 |---|---|
 | **Method** | `PATCH` |
-| **URL** | `http://localhost:3000/api/v1/orgs/65a1b2c3d4e5f60012345679` |
+| **URL** | `http://localhost:3100/api/v1/orgs/65a1b2c3d4e5f60012345679` |
 | **Headers** | `Authorization: Bearer <accessToken>`, `Content-Type: application/json` |
 
 **Request Body:**
@@ -485,7 +485,7 @@
 | | |
 |---|---|
 | **Method** | `POST` |
-| **URL** | `http://localhost:3000/api/v1/orgs/65a1b2c3d4e5f60012345679/invite` |
+| **URL** | `http://localhost:3100/api/v1/orgs/65a1b2c3d4e5f60012345679/invite` |
 | **Headers** | `Authorization: Bearer <accessToken>`, `Content-Type: application/json` |
 
 **Request Body:**
@@ -515,7 +515,7 @@
 | | |
 |---|---|
 | **Method** | `POST` |
-| **URL** | `http://localhost:3000/api/v1/orgs/65a1b2c3d4e5f60012345679/invite/accept` |
+| **URL** | `http://localhost:3100/api/v1/orgs/65a1b2c3d4e5f60012345679/invite/accept` |
 | **Headers** | `Content-Type: application/json` |
 
 **Request Body:**
@@ -551,7 +551,7 @@
 | | |
 |---|---|
 | **Method** | `PATCH` |
-| **URL** | `http://localhost:3000/api/v1/orgs/65a1b2c3d4e5f60012345679/members/65a1b2c3d4e5f6001234567b/role` |
+| **URL** | `http://localhost:3100/api/v1/orgs/65a1b2c3d4e5f60012345679/members/65a1b2c3d4e5f6001234567b/role` |
 | **Headers** | `Authorization: Bearer <adminAccessToken>`, `Content-Type: application/json` |
 
 **Request Body:**
@@ -576,7 +576,7 @@
 | | |
 |---|---|
 | **Method** | `DELETE` |
-| **URL** | `http://localhost:3000/api/v1/orgs/65a1b2c3d4e5f60012345679/members/65a1b2c3d4e5f6001234567b` |
+| **URL** | `http://localhost:3100/api/v1/orgs/65a1b2c3d4e5f60012345679/members/65a1b2c3d4e5f6001234567b` |
 | **Headers** | `Authorization: Bearer <adminAccessToken>` |
 
 **Success Response (200):**
@@ -596,7 +596,7 @@
 | | |
 |---|---|
 | **Method** | `POST` |
-| **URL** | `http://localhost:3000/api/v1/contracts` |
+| **URL** | `http://localhost:3100/api/v1/contracts` |
 | **Headers** | `Authorization: Bearer <accessToken>`, `x-org-id: 65a1b2c3d4e5f60012345679` |
 
 **Request Body (form-data):**
@@ -632,7 +632,7 @@
 | | |
 |---|---|
 | **Method** | `POST` |
-| **URL** | `http://localhost:3000/api/v1/contracts` |
+| **URL** | `http://localhost:3100/api/v1/contracts` |
 | **Headers** | `Authorization: Bearer <accessToken>`, `x-org-id: 65a1b2c3d4e5f60012345679`, `Content-Type: application/json` |
 
 **Request Body:**
@@ -652,7 +652,7 @@
 | | |
 |---|---|
 | **Method** | `GET` |
-| **URL** | `http://localhost:3000/api/v1/contracts?page=1&limit=10&sortBy=createdAt&order=desc&type=NDA` |
+| **URL** | `http://localhost:3100/api/v1/contracts?page=1&limit=10&sortBy=createdAt&order=desc&type=NDA` |
 | **Headers** | `Authorization: Bearer <accessToken>`, `x-org-id: 65a1b2c3d4e5f60012345679` |
 
 **Success Response (200):**
@@ -691,7 +691,7 @@
 | | |
 |---|---|
 | **Method** | `GET` |
-| **URL** | `http://localhost:3000/api/v1/contracts/65a1b2c3d4e5f6001234567c` |
+| **URL** | `http://localhost:3100/api/v1/contracts/65a1b2c3d4e5f6001234567c` |
 | **Headers** | `Authorization: Bearer <accessToken>`, `x-org-id: 65a1b2c3d4e5f60012345679` |
 
 **Success Response (200):**
@@ -731,7 +731,7 @@
 | | |
 |---|---|
 | **Method** | `PATCH` |
-| **URL** | `http://localhost:3000/api/v1/contracts/65a1b2c3d4e5f6001234567c` |
+| **URL** | `http://localhost:3100/api/v1/contracts/65a1b2c3d4e5f6001234567c` |
 | **Headers** | `Authorization: Bearer <accessToken>`, `x-org-id: 65a1b2c3d4e5f60012345679`, `Content-Type: application/json` |
 
 **Request Body:**
@@ -764,7 +764,7 @@
 | | |
 |---|---|
 | **Method** | `POST` |
-| **URL** | `http://localhost:3000/api/v1/contracts/65a1b2c3d4e5f6001234567c/versions` |
+| **URL** | `http://localhost:3100/api/v1/contracts/65a1b2c3d4e5f6001234567c/versions` |
 | **Headers** | `Authorization: Bearer <accessToken>`, `x-org-id: 65a1b2c3d4e5f60012345679`, `Content-Type: application/json` |
 
 **Request Body:**
@@ -794,7 +794,7 @@
 | | |
 |---|---|
 | **Method** | `GET` |
-| **URL** | `http://localhost:3000/api/v1/contracts/65a1b2c3d4e5f6001234567c/versions` |
+| **URL** | `http://localhost:3100/api/v1/contracts/65a1b2c3d4e5f6001234567c/versions` |
 | **Headers** | `Authorization: Bearer <accessToken>`, `x-org-id: 65a1b2c3d4e5f60012345679` |
 
 **Success Response (200):**
@@ -817,7 +817,7 @@
 | | |
 |---|---|
 | **Method** | `POST` |
-| **URL** | `http://localhost:3000/api/v1/contracts/65a1b2c3d4e5f6001234567c/compare` |
+| **URL** | `http://localhost:3100/api/v1/contracts/65a1b2c3d4e5f6001234567c/compare` |
 | **Headers** | `Authorization: Bearer <accessToken>`, `x-org-id: 65a1b2c3d4e5f60012345679`, `Content-Type: application/json` |
 
 **Request Body:**
@@ -849,7 +849,7 @@
 | | |
 |---|---|
 | **Method** | `DELETE` |
-| **URL** | `http://localhost:3000/api/v1/contracts/65a1b2c3d4e5f6001234567c` |
+| **URL** | `http://localhost:3100/api/v1/contracts/65a1b2c3d4e5f6001234567c` |
 | **Headers** | `Authorization: Bearer <accessToken>`, `x-org-id: 65a1b2c3d4e5f60012345679` |
 
 **Success Response (200):**
@@ -867,7 +867,7 @@
 | | |
 |---|---|
 | **Method** | `GET` |
-| **URL** | `http://localhost:3000/api/v1/contracts/65a1b2c3d4e5f6001234567c/audit` |
+| **URL** | `http://localhost:3100/api/v1/contracts/65a1b2c3d4e5f6001234567c/audit` |
 | **Headers** | `Authorization: Bearer <accessToken>`, `x-org-id: 65a1b2c3d4e5f60012345679` |
 
 **Success Response (200):**
@@ -898,7 +898,7 @@
 | | |
 |---|---|
 | **Method** | `POST` |
-| **URL** | `http://localhost:3000/api/v1/analyses` |
+| **URL** | `http://localhost:3100/api/v1/analyses` |
 | **Headers** | `Authorization: Bearer <accessToken>`, `x-org-id: 65a1b2c3d4e5f60012345679`, `Content-Type: application/json` |
 
 **Request Body:**
@@ -958,7 +958,7 @@
 | | |
 |---|---|
 | **Method** | `GET` |
-| **URL** | `http://localhost:3000/api/v1/analyses/65a1b2c3d4e5f6001234567e` |
+| **URL** | `http://localhost:3100/api/v1/analyses/65a1b2c3d4e5f6001234567e` |
 | **Headers** | `Authorization: Bearer <accessToken>`, `x-org-id: 65a1b2c3d4e5f60012345679` |
 
 **Success Response (200):**
@@ -1023,7 +1023,7 @@
 | | |
 |---|---|
 | **Method** | `GET` |
-| **URL** | `http://localhost:3000/api/v1/analyses/contract/65a1b2c3d4e5f6001234567c` |
+| **URL** | `http://localhost:3100/api/v1/analyses/contract/65a1b2c3d4e5f6001234567c` |
 | **Headers** | `Authorization: Bearer <accessToken>`, `x-org-id: 65a1b2c3d4e5f60012345679` |
 
 **Success Response (200):**
@@ -1048,7 +1048,7 @@
 | | |
 |---|---|
 | **Method** | `GET` |
-| **URL** | `http://localhost:3000/api/v1/admin/stats` |
+| **URL** | `http://localhost:3100/api/v1/admin/stats` |
 | **Headers** | `Authorization: Bearer <adminAccessToken>` |
 
 **Success Response (200):**
@@ -1076,7 +1076,7 @@
 | | |
 |---|---|
 | **Method** | `GET` |
-| **URL** | `http://localhost:3000/api/v1/admin/queue/status` |
+| **URL** | `http://localhost:3100/api/v1/admin/queue/status` |
 | **Headers** | `Authorization: Bearer <adminAccessToken>` |
 
 **Success Response (200):**
@@ -1101,7 +1101,7 @@
 | | |
 |---|---|
 | **Method** | `GET` |
-| **URL** | `http://localhost:3000/api/v1/admin/users?page=1&limit=20` |
+| **URL** | `http://localhost:3100/api/v1/admin/users?page=1&limit=20` |
 | **Headers** | `Authorization: Bearer <adminAccessToken>` |
 
 **Success Response (200):**
@@ -1124,7 +1124,7 @@
 | | |
 |---|---|
 | **Method** | `GET` |
-| **URL** | `http://localhost:3000/api/v1/admin/audit-logs?page=1&limit=50` |
+| **URL** | `http://localhost:3100/api/v1/admin/audit-logs?page=1&limit=50` |
 | **Headers** | `Authorization: Bearer <adminAccessToken>` |
 
 **Success Response (200):**
@@ -1142,12 +1142,201 @@
 
 ---
 
-## ❤️ 7. Health Check (No Auth Required)
+## 🔔 7. Notifications
+
+### 7.1 List Notifications
 
 | | |
 |---|---|
 | **Method** | `GET` |
-| **URL** | `http://localhost:3000/health` |
+| **URL** | `http://localhost:3100/api/v1/notifications?page=1&limit=20&read=false` |
+| **Headers** | `Authorization: Bearer <accessToken>` |
+
+**Success Response (200):**
+```json
+{
+  "success": true,
+  "data": {
+    "notifications": [
+      {
+        "id": "65a1b2c3d4e5f60012345681",
+        "orgId": "65a1b2c3d4e5f60012345679",
+        "type": "contract_expiring",
+        "message": "Contract \"Acme Corp NDA\" expires in 30 days.",
+        "read": false,
+        "resourceType": "Contract",
+        "resourceId": "65a1b2c3d4e5f6001234567c",
+        "createdAt": "2026-02-22T02:00:00.000Z"
+      }
+    ],
+    "meta": {
+      "total": 5,
+      "page": 1,
+      "limit": 20,
+      "totalPages": 1,
+      "hasNextPage": false,
+      "hasPrevPage": false
+    }
+  }
+}
+```
+
+---
+
+### 7.2 Get Unread Count
+
+| | |
+|---|---|
+| **Method** | `GET` |
+| **URL** | `http://localhost:3100/api/v1/notifications/unread-count` |
+| **Headers** | `Authorization: Bearer <accessToken>` |
+
+**Success Response (200):**
+```json
+{
+  "success": true,
+  "data": {
+    "unreadCount": 3
+  }
+}
+```
+
+---
+
+### 7.3 Mark Notification as Read
+
+| | |
+|---|---|
+| **Method** | `PATCH` |
+| **URL** | `http://localhost:3100/api/v1/notifications/65a1b2c3d4e5f60012345681/read` |
+| **Headers** | `Authorization: Bearer <accessToken>` |
+
+**Request Body:** _None_
+
+**Success Response (200):**
+```json
+{
+  "success": true,
+  "message": "Notification marked as read.",
+  "data": {
+    "notification": {
+      "id": "65a1b2c3d4e5f60012345681",
+      "read": true,
+      "readAt": "2026-02-23T08:20:00.000Z"
+    }
+  }
+}
+```
+
+---
+
+### 7.4 Mark All as Read
+
+| | |
+|---|---|
+| **Method** | `PATCH` |
+| **URL** | `http://localhost:3100/api/v1/notifications/read-all` |
+| **Headers** | `Authorization: Bearer <accessToken>` |
+
+**Request Body:** _None_
+
+**Success Response (200):**
+```json
+{
+  "success": true,
+  "message": "All notifications marked as read.",
+  "data": {
+    "modifiedCount": 3
+  }
+}
+```
+
+---
+
+## 🌍 8. Enrichment
+
+### 8.1 Get Country Info
+
+| | |
+|---|---|
+| **Method** | `GET` |
+| **URL** | `http://localhost:3100/api/v1/enrichment/country/United%20States` |
+| **Headers** | `Authorization: Bearer <accessToken>` |
+
+**Success Response (200):**
+```json
+{
+  "success": true,
+  "data": {
+    "country": {
+      "name": "United States",
+      "region": "Americas",
+      "subregion": "North America",
+      "currency": "USD",
+      "timezones": ["UTC-12:00", "UTC-11:00", "UTC-10:00", "UTC-09:00", "UTC-08:00", "UTC-07:00", "UTC-06:00", "UTC-05:00", "UTC-04:00", "UTC+10:00", "UTC+12:00"],
+      "capital": "Washington, D.C."
+    }
+  }
+}
+```
+
+---
+
+### 8.2 Get World Time
+
+| | |
+|---|---|
+| **Method** | `GET` |
+| **URL** | `http://localhost:3100/api/v1/enrichment/time/America/New_York` |
+| **Headers** | `Authorization: Bearer <accessToken>` |
+
+**Success Response (200):**
+```json
+{
+  "success": true,
+  "data": {
+    "time": {
+      "datetime": "2026-02-23T02:52:00.000000-05:00",
+      "timezone": "America/New_York",
+      "utcOffset": "-05:00"
+    }
+  }
+}
+```
+
+---
+
+### 8.3 Check Holiday
+
+| | |
+|---|---|
+| **Method** | `GET` |
+| **URL** | `http://localhost:3100/api/v1/enrichment/holidays?country=US&date=2026-12-25` |
+| **Headers** | `Authorization: Bearer <accessToken>` |
+
+**Success Response (200):**
+```json
+{
+  "success": true,
+  "data": {
+    "holiday": {
+      "isHoliday": true,
+      "holidays": [
+        { "name": "Christmas Day", "type": "National" }
+      ]
+    }
+  }
+}
+```
+
+---
+
+## ❤️ 9. Health Check (No Auth Required)
+
+| | |
+|---|---|
+| **Method** | `GET` |
+| **URL** | `http://localhost:3100/health` |
 
 **Success Response (200):**
 ```json
@@ -1179,12 +1368,12 @@
 
 ---
 
-## 🔌 8. WebSocket Events
+## 🔌 10. WebSocket Events
 
-Connect to `ws://localhost:3000` with a valid JWT:
+Connect to `ws://localhost:3100` with a valid JWT:
 
 ```javascript
-const socket = io('http://localhost:3000', {
+const socket = io('http://localhost:3100', {
   auth: { token: '<accessToken>' }
 });
 
