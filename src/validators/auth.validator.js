@@ -38,3 +38,16 @@ export const resetPassword = Joi.object({
             'string.pattern.base': 'Password must contain at least one uppercase, one lowercase, one number, and one special character',
         }),
 });
+
+export const changePassword = Joi.object({
+    currentPassword: Joi.string().required(),
+    newPassword: Joi.string().min(8).max(128).required()
+        .pattern(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])/)
+        .messages({
+            'string.pattern.base': 'Password must contain at least one uppercase, one lowercase, one number, and one special character',
+        }),
+});
+
+export const resendVerificationEmail = Joi.object({
+    email: Joi.string().email().lowercase().trim().required(),
+});

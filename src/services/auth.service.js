@@ -43,33 +43,52 @@ export async function registerUser({ name, email, password }) {
         name,
         email,
         password, // Mongoose pre save hook will hash this before writing to DB
-        emailVerifyToken,
         emailVerified: false,
     });
+
+    // Store token in Redis (token -> userId) and also keep reverse lookup (userId -> token)
+    const redis = getRedisClient();
+    await redis.set(`emailVerify:${emailVerifyToken}`, user._id.toString(), 'EX', env.EMAIL_VERIFICATION_EXPIRY);
+    await redis.set(`emailVerifyUser:${user._id.toString()}`, emailVerifyToken, 'EX', env.EMAIL_VERIFICATION_EXPIRY);
 
     // Send verification email fire and forget so registration isn't blocked
     emailService.sendVerificationEmail(user.email, emailVerifyToken).catch((err) => {
         logger.error('Failed to send verification email:', err.message);
     });
 
-    return { userId: user._id, email: user.email };
+    return { 
+        userId: user._id, 
+        email: user.email,
+        verificationToken: emailVerifyToken,  // Returned for dev/testing purposes
+    };
 }
 
 /**
  * Verify a user's email address using the token from the verification email.
  */
 export async function verifyEmail(token) {
-    // Need +emailVerifyToken since it has select: false in the schema
-    const user = await User.findOne({ emailVerifyToken: token }).select('+emailVerifyToken');
+    const redis = getRedisClient();
 
-    if (!user) {
+    // look up the token in Redis
+    const userId = await redis.get(`emailVerify:${token}`);
+    if (!userId) {
         throw new AppError('Invalid or expired verification token.', 400, 'INVALID_TOKEN');
     }
 
-    // Mark as verified and clear the token so it can't be reused
+    const user = await User.findById(userId);
+    if (!user) {
+        // should not really happen, but handle gracefully
+        await redis.del(`emailVerify:${token}`);
+        await redis.del(`emailVerifyUser:${userId}`);
+        throw new AppError('User associated with token not found.', 400, 'INVALID_TOKEN');
+    }
+
+    // Mark user as verified (if not already)
     user.emailVerified = true;
-    user.emailVerifyToken = undefined;
     await user.save();
+
+    // cleanup Redis keys
+    await redis.del(`emailVerify:${token}`, `emailVerifyUser:${userId}`);
 
     return true;
 }
@@ -241,4 +260,67 @@ export async function resetPassword(token, newPassword) {
     await user.save();
 
     return true;
+}
+
+/**
+ * Change password for an authenticated user.
+ * Requires the user to provide their current password to verify identity.
+ * This is different from password reset — it's done by the logged-in user.
+ */
+export async function changePassword(userId, currentPassword, newPassword) {
+    const user = await User.findById(userId).select('+password');
+
+    if (!user) {
+        throw new AppError('User not found.', 404, 'NOT_FOUND');
+    }
+
+    // Verify the current password matches
+    const isValid = await user.comparePassword(currentPassword);
+    if (!isValid) {
+        throw new AppError('Current password is incorrect.', 401, 'INVALID_PASSWORD');
+    }
+
+    // Update to new password (pre-save hook will hash it)
+    user.password = newPassword;
+    await user.save();
+
+    logger.info(`Password changed for user: ${user.email}`);
+    return true;
+}
+
+/**
+ * Resend email verification token.
+ * Used when the original verification email was lost or the token expired.
+ * Only works if the user exists and hasn't already verified their email.
+ */
+export async function resendVerificationEmail(email) {
+    const user = await User.findOne({ email });
+
+    // Silent return — don't reveal whether the email exists
+    if (!user) return;
+
+    // Don't resend if already verified
+    if (user.emailVerified) {
+        logger.debug(`Verification email requested for already-verified user: ${email}`);
+        return;
+    }
+
+    const redis = getRedisClient();
+    // remove any existing token for this user to avoid multiple valid tokens
+    const existing = await redis.get(`emailVerifyUser:${user._id.toString()}`);
+    if (existing) {
+        await redis.del(`emailVerify:${existing}`);
+    }
+
+    // Generate a new verification token
+    const emailVerifyToken = generateSecureToken();
+    await redis.set(`emailVerify:${emailVerifyToken}`, user._id.toString(), 'EX', env.EMAIL_VERIFICATION_EXPIRY);
+    await redis.set(`emailVerifyUser:${user._id.toString()}`, emailVerifyToken, 'EX', env.EMAIL_VERIFICATION_EXPIRY);
+
+    // Fire-and-forget — don't fail the request if email delivery fails
+    emailService.sendVerificationEmail(user.email, emailVerifyToken).catch((err) => {
+        logger.error('Failed to send verification email:', err.message);
+    });
+
+    logger.info(`Verification email resent to: ${email}`);
 }

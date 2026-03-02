@@ -184,7 +184,9 @@ lexai-backend/
   email: { type: String, unique: true },
   password: String,                    // bcrypt hashed — NEVER returned in API
   emailVerified: Boolean,              // Must be true to use the platform
-  emailVerifyToken: String,            // Temp token for email confirmation
+  // emailVerifyToken value is no longer stored on the user document –
+  // temporary verification tokens live in Redis with a 24‑hour TTL
+  emailVerifyToken: String,            // (deprecated) Temp token for email confirmation (moved to Redis)
   passwordResetToken: String,          // Time-limited reset token
   passwordResetExpiry: Date,
   organization: ObjectId (ref: Org),

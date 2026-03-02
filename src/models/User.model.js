@@ -42,8 +42,8 @@ const userSchema = new mongoose.Schema(
         },
 
         // ─── Email Verification ──────────────────────────────────
+        // emailVerifyToken no longer stored in user document; temporary tokens are kept in Redis
         emailVerified: { type: Boolean, default: false },
-        emailVerifyToken: { type: String, select: false },
 
         // ─── Password Reset ──────────────────────────────────────
         passwordResetToken: { type: String, select: false },
@@ -69,7 +69,6 @@ const userSchema = new mongoose.Schema(
                 delete ret._id;
                 delete ret.__v;
                 delete ret.password;
-                delete ret.emailVerifyToken;
                 delete ret.passwordResetToken;
                 delete ret.passwordResetExpiry;
                 return ret;

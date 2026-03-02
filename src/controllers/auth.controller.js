@@ -11,10 +11,22 @@ import * as auditService from '../services/audit.service.js';
 /** POST /auth/register */
 export async function register(req, res) {
     const result = await authService.registerUser(req.body);
+    
+    // In development, include verification token in response for testing
+    // In production, token ONLY sent via email for security
+    const responseData = {
+        userId: result.userId,
+        email: result.email,
+    };
+    
+    if (process.env.NODE_ENV !== 'production') {
+        responseData.verificationToken = result.verificationToken; // ⚠️ DEV ONLY
+    }
+    
     sendSuccess(res, {
         statusCode: HTTP.CREATED,
         message: 'Registration successful. Please check your email to verify your account.',
-        data: result,
+        data: responseData,
     });
 }
 
@@ -82,7 +94,15 @@ export async function refreshToken(req, res) {
 /** POST /auth/logout */
 export async function logout(req, res) {
     await authService.logoutUser(req.user.jti, req.user.exp);
-    res.clearCookie('refreshToken', { path: '/' });
+    
+    // Clear the refresh token cookie with exact same options as when set
+    res.clearCookie('refreshToken', {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        path: '/',
+    });
+    
     sendSuccess(res, { message: 'Logged out successfully' });
 }
 
@@ -97,4 +117,17 @@ export async function forgotPassword(req, res) {
 export async function resetPassword(req, res) {
     await authService.resetPassword(req.body.token, req.body.password);
     sendSuccess(res, { message: 'Password reset successfully. You can now log in with your new password.' });
+}
+
+/** POST /auth/change-password */
+export async function changePassword(req, res) {
+    await authService.changePassword(req.user.userId, req.body.currentPassword, req.body.newPassword);
+    sendSuccess(res, { message: 'Password changed successfully.' });
+}
+
+/** POST /auth/resend-verification-email */
+export async function resendVerificationEmail(req, res) {
+    await authService.resendVerificationEmail(req.body.email);
+    // Always return success to prevent email enumeration
+    sendSuccess(res, { message: 'If this email exists and is unverified, a verification link has been sent.' });
 }

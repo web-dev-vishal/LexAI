@@ -68,6 +68,11 @@ async function sendEmail({ to, subject, html, text }) {
 export async function sendVerificationEmail(email, token) {
   const verifyUrl = `${env.ALLOWED_ORIGINS?.split(',')[0] || 'http://localhost:3000'}/verify-email?token=${token}`;
 
+  // In development, log the token for testing without email access
+  if (process.env.NODE_ENV !== 'production') {
+    logger.info(`✅ [DEV] Verification token for ${email}: ${token}`);
+  }
+
   return sendEmail({
     to: email,
     subject: 'LexAI — Verify Your Email Address',
@@ -89,6 +94,11 @@ export async function sendVerificationEmail(email, token) {
  */
 export async function sendPasswordResetEmail(email, token) {
   const resetUrl = `${env.ALLOWED_ORIGINS?.split(',')[0] || 'http://localhost:3000'}/reset-password?token=${token}`;
+
+  // In development, log the token for testing without email access
+  if (process.env.NODE_ENV !== 'production') {
+    logger.info(`✅ [DEV] Password reset token for ${email}: ${token}`);
+  }
 
   return sendEmail({
     to: email,

@@ -78,6 +78,9 @@ const envSchema = z.object({
   SMTP_PASS: z.string().default(''),
   EMAIL_FROM: z.string().default('noreply@lexai.io'),
 
+  // ─── Email Tokens ───────────────────────────────────────
+  EMAIL_VERIFICATION_EXPIRY: z.coerce.number().default(86400), // seconds until email verification tokens expire (24h)
+
   // ─── External APIs ───────────────────────────────────────
   REST_COUNTRIES_URL: z.string().url().default('https://restcountries.com/v3.1'),
   WORLD_TIME_API_URL: z.string().url().default('https://worldtimeapi.org/api'),

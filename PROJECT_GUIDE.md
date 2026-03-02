@@ -181,7 +181,7 @@ erDiagram
         String email UK
         String password
         Boolean emailVerified
-        String emailVerifyToken
+        String emailVerifyToken  // now stored in Redis; not part of persisted user object
         String passwordResetToken
         Date passwordResetExpiry
         ObjectId organization FK
