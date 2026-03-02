@@ -1,356 +1,34 @@
-// /**
-//  * Auth Service
-//  *
-//  * Core authentication business logic:
-//  *   - Registration with email verification
-//  *   - Login with JWT token issuance (access + refresh)
-//  *   - Refresh token rotation (single-use, prevents replay attacks)
-//  *   - Token blacklisting on logout
-//  *   - Forgot/reset password flow
-//  *
-//  * Security design:
-//  *   - Refresh tokens are single-use: each use invalidates the previous token
-//  *   - If a used refresh token is replayed, it may indicate token theft
-//  *   - Token blacklist is stored in Redis with TTL matching token expiry
-//  *   - Email enumeration is prevented in forgot-password (always returns success)
-//  */
-
-// import env from '../config/env.js';
-// import User from '../models/User.model.js';
-// import { getRedisClient } from '../config/redis.js';
-// import { signAccessToken, signRefreshToken, verifyToken, getRemainingTTL } from '../utils/tokenHelper.js';
-// import { generateSecureToken } from '../utils/hashHelper.js';
-// import * as emailService from './email.service.js';
-// import logger from '../utils/logger.js';
-// import AppError from '../utils/AppError.js';
-
-// /**
-//  * Register a new user.
-//  * Creates the user, generates an email verification token, and sends
-//  * the verification email (non-blocking — registration succeeds even if email fails).
-//  */
-// export async function registerUser({ name, email, password }) {
-//     // Check if email is already taken — throw 409 Conflict if so
-//     const existingUser = await User.findOne({ email });
-//     if (existingUser) {
-//         throw new AppError('An account with this email already exists.', 409, 'DUPLICATE_EMAIL');
-//     }
-
-//     // Generate a secure random token for email verification
-//     const emailVerifyToken = generateSecureToken();
-
-//     const user = await User.create({
-//         name,
-//         email,
-//         password, // Mongoose pre save hook will hash this before writing to DB
-//         emailVerified: false,
-//     });
-
-//     // Store token in Redis (token -> userId) and also keep reverse lookup (userId -> token)
-//     const redis = getRedisClient();
-//     await redis.set(`emailVerify:${emailVerifyToken}`, user._id.toString(), 'EX', env.EMAIL_VERIFICATION_EXPIRY);
-//     await redis.set(`emailVerifyUser:${user._id.toString()}`, emailVerifyToken, 'EX', env.EMAIL_VERIFICATION_EXPIRY);
-
-//     // Send verification email fire and forget so registration isn't blocked
-//     emailService.sendVerificationEmail(user.email, emailVerifyToken).catch((err) => {
-//         logger.error('Failed to send verification email:', err.message);
-//     });
-
-//     return { 
-//         userId: user._id, 
-//         email: user.email,
-//         verificationToken: emailVerifyToken,  // Returned for dev/testing purposes
-//     };
-// }
-
-// /**
-//  * Verify a user's email address using the token from the verification email.
-//  */
-// export async function verifyEmail(token) {
-//     const redis = getRedisClient();
-
-//     // look up the token in Redis
-//     const userId = await redis.get(`emailVerify:${token}`);
-//     if (!userId) {
-//         throw new AppError('Invalid or expired verification token.', 400, 'INVALID_TOKEN');
-//     }
-
-//     const user = await User.findById(userId);
-//     if (!user) {
-//         // should not really happen, but handle gracefully
-//         await redis.del(`emailVerify:${token}`);
-//         await redis.del(`emailVerifyUser:${userId}`);
-//         throw new AppError('User associated with token not found.', 400, 'INVALID_TOKEN');
-//     }
-
-//     // Mark user as verified (if not already)
-//     user.emailVerified = true;
-//     await user.save();
-
-//     // cleanup Redis keys
-//     await redis.del(`emailVerify:${token}`, `emailVerifyUser:${userId}`);
-
-//     return true;
-// }
-
-// /**
-//  * Authenticate a user and issue access + refresh tokens.
-//  * Performs three checks: credentials, email verified, account active.
-//  */
-// export async function loginUser({ email, password }) {
-//     const redis = getRedisClient();
-//     const lockoutKey = `login:lockout:${email.toLowerCase()}`;
-//     const failKey = `login:fail:${email.toLowerCase()}`;
-//     const MAX_ATTEMPTS = 5;
-//     const LOCKOUT_SECONDS = 900; // 15 minutes
-
-//     // Check if account is currently locked out
-//     const isLocked = await redis.exists(lockoutKey);
-//     if (isLocked) {
-//         const ttl = await redis.ttl(lockoutKey);
-//         throw new AppError(
-//             `Account temporarily locked due to too many failed attempts. Try again in ${Math.ceil(ttl / 60)} minutes.`,
-//             429,
-//             'ACCOUNT_LOCKED'
-//         );
-//     }
-
-//     // Explicitly select password since it has select: false in the schema
-//     const user = await User.findOne({ email }).select('+password');
-
-//     // Intentionally vague error message — don't reveal whether email exists
-//     if (!user || !(await user.comparePassword(password))) {
-//         // Increment failed attempt counter
-//         const failures = await redis.incr(failKey);
-//         await redis.expire(failKey, LOCKOUT_SECONDS);
-
-//         if (failures >= MAX_ATTEMPTS) {
-//             // Lock the account and clear the counter
-//             await redis.set(lockoutKey, '1', 'EX', LOCKOUT_SECONDS);
-//             await redis.del(failKey);
-//             logger.warn(`Account locked after ${MAX_ATTEMPTS} failed login attempts: ${email}`);
-//             throw new AppError(
-//                 'Account temporarily locked due to too many failed attempts. Try again in 15 minutes.',
-//                 429,
-//                 'ACCOUNT_LOCKED'
-//             );
-//         }
-
-//         throw new AppError('Invalid email or password.', 401, 'INVALID_CREDENTIALS');
-//     }
-
-//     if (!user.emailVerified) {
-//         throw new AppError('Please verify your email before logging in.', 403, 'EMAIL_NOT_VERIFIED');
-//     }
-
-//     if (!user.isActive) {
-//         throw new AppError('Your account has been deactivated.', 403, 'ACCOUNT_DEACTIVATED');
-//     }
-
-//     // Clear failed attempt counter on successful login
-//     await redis.del(failKey);
-//     await redis.del(lockoutKey);
-
-//     // Issue tokens — access token contains org/role for auth checks without DB hits
-//     const accessPayload = { userId: user._id, orgId: user.organization, role: user.role };
-//     const access = signAccessToken(accessPayload, env.JWT_ACCESS_SECRET, env.JWT_ACCESS_EXPIRY);
-//     const refresh = signRefreshToken({ userId: user._id }, env.JWT_REFRESH_SECRET, env.JWT_REFRESH_EXPIRY);
-
-//     // Track last login for admin dashboards
-//     user.lastLoginAt = new Date();
-//     await user.save();
-
-//     return { accessToken: access.token, refreshToken: refresh.token, user };
-// }
-
-// /**
-//  * Refresh token rotation.
-//  *
-//  * Each refresh token can only be used ONCE:
-//  *   1. Verify the incoming refresh token
-//  *   2. Check if the token's JTI is blacklisted (already used)
-//  *   3. Blacklist the incoming token immediately
-//  *   4. Issue a new access token + new refresh token
-//  *
-//  * If a blacklisted token is replayed, it may indicate token theft.
-//  */
-// export async function refreshAccessToken(refreshTokenStr) {
-//     const decoded = verifyToken(refreshTokenStr, env.JWT_REFRESH_SECRET);
-//     const redis = getRedisClient();
-
-//     // Check if this refresh token was already used (token rotation enforcement)
-//     const isUsed = await redis.exists(`blacklist:${decoded.jti}`);
-//     if (isUsed) {
-//         throw new AppError(
-//             'Refresh token has already been used. This may indicate token theft. Please log in again.',
-//             401,
-//             'TOKEN_ROTATED'
-//         );
-//     }
-
-//     // Blacklist the incoming refresh token (mark as used) with TTL matching its expiry
-//     const ttl = getRemainingTTL(decoded.exp);
-//     await redis.set(`blacklist:${decoded.jti}`, '1', 'EX', ttl);
-
-//     // Fetch fresh user data so role/org changes take effect immediately
-//     const user = await User.findById(decoded.userId);
-//     if (!user || !user.isActive) {
-//         throw new AppError('User not found or account deactivated.', 401, 'UNAUTHORIZED');
-//     }
-
-//     // Issue brand new token pair
-//     const accessPayload = { userId: user._id, orgId: user.organization, role: user.role };
-//     const newAccess = signAccessToken(accessPayload, env.JWT_ACCESS_SECRET, env.JWT_ACCESS_EXPIRY);
-//     const newRefresh = signRefreshToken({ userId: user._id }, env.JWT_REFRESH_SECRET, env.JWT_REFRESH_EXPIRY);
-
-//     return { accessToken: newAccess.token, refreshToken: newRefresh.token };
-// }
-
-// /**
-//  * Logout — blacklist the current access token's JTI so it can't be reused.
-//  * The blacklist entry expires when the token would have expired naturally.
-//  */
-// export async function logoutUser(jti, exp) {
-//     const redis = getRedisClient();
-//     const ttl = getRemainingTTL(exp);
-//     await redis.set(`blacklist:${jti}`, '1', 'EX', ttl);
-// }
-
-// /**
-//  * Forgot password — generate a time-limited reset token and email it.
-//  * Always returns void (no error) to prevent email enumeration attacks.
-//  */
-// export async function forgotPassword(email) {
-//     const user = await User.findOne({ email });
-
-//     // Silent return — don't reveal whether the email exists in our system
-//     if (!user) return;
-
-//     const resetToken = generateSecureToken();
-//     const resetExpiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hour validity
-
-//     user.passwordResetToken = resetToken;
-//     user.passwordResetExpiry = resetExpiry;
-//     await user.save();
-
-//     // Fire-and-forget — don't fail the request if email delivery fails
-//     emailService.sendPasswordResetEmail(user.email, resetToken).catch((err) => {
-//         logger.error('Failed to send password reset email:', err.message);
-//     });
-// }
-
-// /**
-//  * Reset password using a valid reset token.
-//  * The token must not be expired and must match a user in the database.
-//  */
-// export async function resetPassword(token, newPassword) {
-//     const user = await User.findOne({
-//         passwordResetToken: token,
-//         passwordResetExpiry: { $gt: new Date() }, // Token must not be expired
-//     }).select('+passwordResetToken +passwordResetExpiry');
-
-//     if (!user) {
-//         throw new AppError('Invalid or expired password reset token.', 400, 'INVALID_TOKEN');
-//     }
-
-//     // Update password (pre-save hook will hash it) and clear reset fields
-//     user.password = newPassword;
-//     user.passwordResetToken = undefined;
-//     user.passwordResetExpiry = undefined;
-//     await user.save();
-
-//     return true;
-// }
-
-// /**
-//  * Change password for an authenticated user.
-//  * Requires the user to provide their current password to verify identity.
-//  * This is different from password reset — it's done by the logged-in user.
-//  */
-// export async function changePassword(userId, currentPassword, newPassword) {
-//     const user = await User.findById(userId).select('+password');
-
-//     if (!user) {
-//         throw new AppError('User not found.', 404, 'NOT_FOUND');
-//     }
-
-//     // Verify the current password matches
-//     const isValid = await user.comparePassword(currentPassword);
-//     if (!isValid) {
-//         throw new AppError('Current password is incorrect.', 401, 'INVALID_PASSWORD');
-//     }
-
-//     // Update to new password (pre-save hook will hash it)
-//     user.password = newPassword;
-//     await user.save();
-
-//     logger.info(`Password changed for user: ${user.email}`);
-//     return true;
-// }
-
-// /**
-//  * Resend email verification token.
-//  * Used when the original verification email was lost or the token expired.
-//  * Only works if the user exists and hasn't already verified their email.
-//  */
-// export async function resendVerificationEmail(email) {
-//     const user = await User.findOne({ email });
-
-//     // Silent return — don't reveal whether the email exists
-//     if (!user) return;
-
-//     // Don't resend if already verified
-//     if (user.emailVerified) {
-//         logger.debug(`Verification email requested for already-verified user: ${email}`);
-//         return;
-//     }
-
-//     const redis = getRedisClient();
-//     // remove any existing token for this user to avoid multiple valid tokens
-//     const existing = await redis.get(`emailVerifyUser:${user._id.toString()}`);
-//     if (existing) {
-//         await redis.del(`emailVerify:${existing}`);
-//     }
-
-//     // Generate a new verification token
-//     const emailVerifyToken = generateSecureToken();
-//     await redis.set(`emailVerify:${emailVerifyToken}`, user._id.toString(), 'EX', env.EMAIL_VERIFICATION_EXPIRY);
-//     await redis.set(`emailVerifyUser:${user._id.toString()}`, emailVerifyToken, 'EX', env.EMAIL_VERIFICATION_EXPIRY);
-
-//     // Fire-and-forget — don't fail the request if email delivery fails
-//     emailService.sendVerificationEmail(user.email, emailVerifyToken).catch((err) => {
-//         logger.error('Failed to send verification email:', err.message);
-//     });
-
-//     logger.info(`Verification email resent to: ${email}`);
-// }
-
-
 /**
  * Auth Service
  *
- * Email verification strategy:
- *   We sign a short-lived JWT (email verify token) and store its JTI in Redis
- *   against the userId. When the user clicks the link, we verify the JWT
- *   signature first, then confirm the JTI is still live in Redis — that second
- *   check is what lets us invalidate tokens early (e.g. on resend) and ensures
- *   single-use. No hashing layer, no dual keys, just straightforward logic.
+ * All authentication business logic lives here.
  *
- * Password reset uses the same pattern: sign a JWT, store JTI in Redis.
- * Verifying = check signature + check Redis. Consuming = delete from Redis.
+ * Token strategy (Redis-based):
+ *   - Email verification & password reset use crypto.randomBytes() to generate
+ *     a secure 32-byte hex token that is stored in Redis with a TTL.
+ *     When the user submits the token it is looked up in Redis, consumed (deleted),
+ *     and the corresponding DB action is performed. This gives us:
+ *       • Single-use tokens (deleted on first use)
+ *       • Easy early invalidation (delete the key)
+ *       • No JWT secret sprawl for short-lived one-time tokens
  *
- * Refresh token rotation is atomic via SET NX — only one request can consume
- * a given JTI, preventing race conditions on simultaneous refresh calls.
+ *   - Access & Refresh tokens remain JWTs (signed with JWT_ACCESS_SECRET /
+ *     JWT_REFRESH_SECRET). Refresh tokens rotate on every use (SET NX prevents
+ *     replay attacks). Blacklist entries live in Redis until the token's natural
+ *     expiry so revoked tokens are rejected without touching the DB.
+ *
+ * Brute-force protection:
+ *   - After 5 failed login attempts the account is locked for 15 minutes.
+ *   - Lock state is stored in Redis so it survives server restarts.
  */
 
+import crypto from 'crypto';
 import env from '../config/env.js';
 import User from '../models/User.model.js';
 import { getRedisClient } from '../config/redis.js';
 import {
     signAccessToken,
     signRefreshToken,
-    signEmailVerifyToken,
-    signPasswordResetToken,
     verifyToken as verifyJwt,
     getRemainingTTL,
 } from '../utils/tokenHelper.js';
@@ -359,37 +37,41 @@ import logger from '../utils/logger.js';
 import AppError from '../utils/AppError.js';
 
 // ---------------------------------------------------------------------------
-// Redis key namespaces — one place to change if we ever need to rename
+// Redis key namespaces — one place to change if keys ever need renaming
 // ---------------------------------------------------------------------------
-
 const REDIS_KEY = {
-    emailVerify:     (jti)    => `emailVerify:${jti}`,
-    emailVerifyUser: (userId) => `emailVerifyUser:${userId}`,
-    pwReset:         (jti)    => `pwReset:${jti}`,
-    pwResetUser:     (userId) => `pwResetUser:${userId}`,
-    loginFail:       (email)  => `login:fail:${email}`,
-    loginLock:       (email)  => `login:lockout:${email}`,
-    blacklist:       (jti)    => `blacklist:${jti}`,
+    emailVerify: (token) => `emailVerify:${token}`,
+    pwReset: (token) => `pwReset:${token}`,
+    loginFail: (email) => `login:fail:${email}`,
+    loginLock: (email) => `login:lockout:${email}`,
+    blacklist: (jti) => `blacklist:${jti}`,
 };
 
 // ---------------------------------------------------------------------------
-// Cookie options — single source of truth, used by controller for set + clear
+// Helpers
 // ---------------------------------------------------------------------------
 
+/** Generate a URL-safe random hex token (64 hex chars = 32 bytes of entropy). */
+function generateToken() {
+    return crypto.randomBytes(32).toString('hex');
+}
+
+// ---------------------------------------------------------------------------
+// Cookie options — single source of truth shared with the controller
+// ---------------------------------------------------------------------------
 export function buildRefreshCookieOptions() {
     return {
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
+        secure: env.NODE_ENV === 'production',
         sameSite: 'strict',
-        maxAge: env.JWT_REFRESH_COOKIE_MAX_AGE_MS ?? 7 * 24 * 60 * 60 * 1000,
-        path: '/api/auth', // scoped — cookie only travels to auth endpoints
+        maxAge: env.JWT_REFRESH_COOKIE_MAX_AGE_MS,
+        path: '/',
     };
 }
 
 // ---------------------------------------------------------------------------
 // Registration
 // ---------------------------------------------------------------------------
-
 export async function registerUser({ name, email, password }) {
     const normalizedEmail = email.toLowerCase();
 
@@ -401,17 +83,22 @@ export async function registerUser({ name, email, password }) {
     const user = await User.create({
         name,
         email: normalizedEmail,
-        password, // pre-save hook hashes this
+        password,          // pre-save hook in the model hashes this
         emailVerified: false,
     });
 
-    const rawVerifyToken = await _issueAndSendVerificationToken(user);
+    const verificationToken = await _issueEmailVerificationToken(user._id);
+
+    // Fire-and-forget: don't block registration if the email fails
+    emailService.sendVerificationEmail(user.email, verificationToken).catch((err) => {
+        logger.error({ err: err.message, userId: user._id }, 'Failed to send verification email');
+    });
 
     const result = { userId: user._id, email: user.email };
 
-    // Expose the raw token outside production so devs can test without an inbox
-    if (process.env.NODE_ENV !== 'production') {
-        result.verificationToken = rawVerifyToken;
+    // Expose the raw token in non-production so devs can test without an inbox
+    if (env.NODE_ENV !== 'production') {
+        result.verificationToken = verificationToken;
     }
 
     return result;
@@ -420,26 +107,13 @@ export async function registerUser({ name, email, password }) {
 // ---------------------------------------------------------------------------
 // Email verification
 // ---------------------------------------------------------------------------
-
 export async function verifyEmail(token) {
-    // Step 1 — verify the JWT signature and expiry.
-    // If someone tampered with the token or it expired, this throws immediately.
-    let decoded;
-    try {
-        decoded = verifyJwt(token, env.JWT_EMAIL_VERIFY_SECRET);
-    } catch {
-        throw new AppError('Invalid or expired verification link.', 400, 'INVALID_TOKEN');
-    }
-
     const redis = getRedisClient();
+    const userId = await redis.get(REDIS_KEY.emailVerify(token));
 
-    // Step 2 — check Redis to confirm this JTI is still valid.
-    // The key is deleted after first use and also when a resend replaces it,
-    // so this is what makes the link truly single-use.
-    const userId = await redis.get(REDIS_KEY.emailVerify(decoded.jti));
     if (!userId) {
         throw new AppError(
-            'This verification link has already been used or has expired. Request a new one.',
+            'Invalid or expired verification token. Please request a new one.',
             400,
             'INVALID_TOKEN'
         );
@@ -447,38 +121,53 @@ export async function verifyEmail(token) {
 
     const user = await User.findById(userId);
     if (!user) {
-        // Stale Redis entry — clean up and bail
-        await redis.del(REDIS_KEY.emailVerify(decoded.jti));
-        throw new AppError('Invalid or expired verification link.', 400, 'INVALID_TOKEN');
+        // Stale Redis entry — clean up and reject
+        await redis.del(REDIS_KEY.emailVerify(token));
+        throw new AppError('Invalid or expired verification token.', 400, 'INVALID_TOKEN');
     }
 
+    // Mark as verified if not already (idempotent — safe to call twice)
     if (!user.emailVerified) {
         user.emailVerified = true;
         await user.save();
     }
 
-    // Step 3 — consume the token. Delete both the JTI key and the user pointer.
-    await redis.pipeline()
-        .del(REDIS_KEY.emailVerify(decoded.jti))
-        .del(REDIS_KEY.emailVerifyUser(userId))
-        .exec();
-
+    // Always consume the token so it cannot be used again
+    await redis.del(REDIS_KEY.emailVerify(token));
     return true;
+}
+
+// ---------------------------------------------------------------------------
+// Resend verification email
+// ---------------------------------------------------------------------------
+export async function resendVerificationEmail(email) {
+    const user = await User.findOne({ email: email.toLowerCase() });
+
+    // Silent return prevents email enumeration
+    if (!user) return;
+    if (user.emailVerified) return;
+
+    const verificationToken = await _issueEmailVerificationToken(user._id);
+
+    emailService.sendVerificationEmail(user.email, verificationToken).catch((err) => {
+        logger.error({ err: err.message, userId: user._id }, 'Failed to resend verification email');
+    });
+
+    logger.info({ userId: user._id }, 'Verification email resent');
 }
 
 // ---------------------------------------------------------------------------
 // Login
 // ---------------------------------------------------------------------------
-
 export async function loginUser({ email, password }) {
     const redis = getRedisClient();
     const normalizedEmail = email.toLowerCase();
     const lockKey = REDIS_KEY.loginLock(normalizedEmail);
     const failKey = REDIS_KEY.loginFail(normalizedEmail);
-    const MAX_ATTEMPTS    = 5;
+    const MAX_ATTEMPTS = 5;
     const LOCKOUT_SECONDS = 900; // 15 minutes
 
-    // Check lockout before touching the DB at all
+    // Check lockout before touching the DB
     const [isLocked, lockTTL] = await Promise.all([
         redis.exists(lockKey),
         redis.ttl(lockKey),
@@ -496,8 +185,7 @@ export async function loginUser({ email, password }) {
     const credentialsValid = user && (await user.comparePassword(password));
 
     if (!credentialsValid) {
-        // Increment the failure counter atomically — two concurrent bad logins
-        // both count and neither slips past the threshold check
+        // Atomically increment the failure counter
         const pipeline = redis.pipeline();
         pipeline.incr(failKey);
         pipeline.expire(failKey, LOCKOUT_SECONDS);
@@ -510,7 +198,7 @@ export async function loginUser({ email, password }) {
                 .exec();
             logger.warn({ email: normalizedEmail }, 'Account locked after too many failed login attempts');
             throw new AppError(
-                'Account temporarily locked due to too many failed attempts. Try again in 15 minutes.',
+                'Account temporarily locked after too many failed attempts. Try again in 15 minutes.',
                 429,
                 'ACCOUNT_LOCKED'
             );
@@ -520,18 +208,26 @@ export async function loginUser({ email, password }) {
     }
 
     if (!user.emailVerified) {
-        throw new AppError('Please verify your email before logging in.', 403, 'EMAIL_NOT_VERIFIED');
+        throw new AppError(
+            'Please verify your email before logging in.',
+            403,
+            'EMAIL_NOT_VERIFIED'
+        );
     }
 
     if (user.isActive === false) {
-        throw new AppError('Your account has been deactivated. Please contact support.', 403, 'ACCOUNT_DEACTIVATED');
+        throw new AppError(
+            'Your account has been deactivated. Please contact support.',
+            403,
+            'ACCOUNT_DEACTIVATED'
+        );
     }
 
-    // Successful login — wipe any leftover lockout/failure state
+    // Successful login — clear any leftover lock/fail state
     await redis.pipeline().del(failKey).del(lockKey).exec();
 
     const accessPayload = { userId: user._id, orgId: user.organization, role: user.role };
-    const access  = signAccessToken(accessPayload, env.JWT_ACCESS_SECRET, env.JWT_ACCESS_EXPIRY);
+    const access = signAccessToken(accessPayload, env.JWT_ACCESS_SECRET, env.JWT_ACCESS_EXPIRY);
     const refresh = signRefreshToken({ userId: user._id }, env.JWT_REFRESH_SECRET, env.JWT_REFRESH_EXPIRY);
 
     user.lastLoginAt = new Date();
@@ -543,10 +239,9 @@ export async function loginUser({ email, password }) {
 // ---------------------------------------------------------------------------
 // Refresh token rotation
 // ---------------------------------------------------------------------------
-
 export async function refreshAccessToken(refreshTokenStr) {
     if (!refreshTokenStr) {
-        throw new AppError('Refresh token not found. Please log in again.', 401, 'UNAUTHORIZED');
+        throw new AppError('Refresh token not provided. Please log in again.', 401, 'UNAUTHORIZED');
     }
 
     let decoded;
@@ -563,9 +258,7 @@ export async function refreshAccessToken(refreshTokenStr) {
         throw new AppError('Refresh token has expired. Please log in again.', 401, 'TOKEN_EXPIRED');
     }
 
-    // SET NX is atomic. If two requests come in simultaneously with the same
-    // token, exactly one gets the key set (returns 1) and the other finds it
-    // already set (returns null). No race condition possible.
+    // SET NX is atomic — exactly one concurrent request wins; replays are rejected
     const consumed = await redis.set(REDIS_KEY.blacklist(decoded.jti), '1', 'EX', ttl, 'NX');
     if (!consumed) {
         logger.warn({ jti: decoded.jti, userId: decoded.userId }, 'Refresh token replay detected — possible token theft');
@@ -586,7 +279,7 @@ export async function refreshAccessToken(refreshTokenStr) {
     }
 
     const accessPayload = { userId: user._id, orgId: user.organization, role: user.role };
-    const newAccess  = signAccessToken(accessPayload, env.JWT_ACCESS_SECRET, env.JWT_ACCESS_EXPIRY);
+    const newAccess = signAccessToken(accessPayload, env.JWT_ACCESS_SECRET, env.JWT_ACCESS_EXPIRY);
     const newRefresh = signRefreshToken({ userId: user._id }, env.JWT_REFRESH_SECRET, env.JWT_REFRESH_EXPIRY);
 
     return { accessToken: newAccess.token, refreshToken: newRefresh.token };
@@ -595,17 +288,17 @@ export async function refreshAccessToken(refreshTokenStr) {
 // ---------------------------------------------------------------------------
 // Logout
 // ---------------------------------------------------------------------------
-
 export async function logoutUser(jti, exp, refreshTokenStr) {
     const redis = getRedisClient();
     const pipeline = redis.pipeline();
 
+    // Blacklist the access token JTI so it cannot be used after logout
     const accessTTL = getRemainingTTL(exp);
     if (accessTTL > 0) {
         pipeline.set(REDIS_KEY.blacklist(jti), '1', 'EX', accessTTL);
     }
 
-    // Also kill the refresh token so the cookie can't be used to get a new access token
+    // Also kill the refresh token so the cookie cannot yield a new access token
     if (refreshTokenStr) {
         try {
             const decoded = verifyJwt(refreshTokenStr, env.JWT_REFRESH_SECRET);
@@ -614,7 +307,7 @@ export async function logoutUser(jti, exp, refreshTokenStr) {
                 pipeline.set(REDIS_KEY.blacklist(decoded.jti), '1', 'EX', refreshTTL);
             }
         } catch {
-            // Refresh token already expired or tampered — nothing to blacklist, that's fine
+            // Refresh token already expired or tampered — nothing to blacklist
             logger.debug('Refresh token invalid at logout — skipping blacklist entry');
         }
     }
@@ -625,34 +318,29 @@ export async function logoutUser(jti, exp, refreshTokenStr) {
 // ---------------------------------------------------------------------------
 // Forgot password
 // ---------------------------------------------------------------------------
-
 export async function forgotPassword(email) {
     const user = await User.findOne({ email: email.toLowerCase() });
-    if (!user) return; // Silent — don't reveal whether the email is registered
 
-    await _issueAndSendPasswordResetToken(user);
+    // Silent return — never reveal whether the email is registered
+    if (!user) return;
+
+    const resetToken = await _issuePasswordResetToken(user._id);
+
+    emailService.sendPasswordResetEmail(user.email, resetToken).catch((err) => {
+        logger.error({ err: err.message, userId: user._id }, 'Failed to send password reset email');
+    });
 }
 
 // ---------------------------------------------------------------------------
 // Reset password
 // ---------------------------------------------------------------------------
-
 export async function resetPassword(token, newPassword) {
-    // Step 1 — verify JWT signature
-    let decoded;
-    try {
-        decoded = verifyJwt(token, env.JWT_PASSWORD_RESET_SECRET);
-    } catch {
-        throw new AppError('Invalid or expired password reset link.', 400, 'INVALID_TOKEN');
-    }
-
     const redis = getRedisClient();
+    const userId = await redis.get(REDIS_KEY.pwReset(token));
 
-    // Step 2 — check the JTI is still in Redis (single-use + early invalidation)
-    const userId = await redis.get(REDIS_KEY.pwReset(decoded.jti));
     if (!userId) {
         throw new AppError(
-            'This password reset link has already been used or has expired.',
+            'Invalid or expired password reset token. Please request a new one.',
             400,
             'INVALID_TOKEN'
         );
@@ -660,24 +348,24 @@ export async function resetPassword(token, newPassword) {
 
     const user = await User.findById(userId).select('+password');
     if (!user) {
-        await redis.del(REDIS_KEY.pwReset(decoded.jti));
-        throw new AppError('Invalid or expired password reset link.', 400, 'INVALID_TOKEN');
+        await redis.del(REDIS_KEY.pwReset(token));
+        throw new AppError('Invalid or expired password reset token.', 400, 'INVALID_TOKEN');
     }
 
     const isSamePassword = await user.comparePassword(newPassword);
     if (isSamePassword) {
-        throw new AppError('New password must be different from your current password.', 400, 'PASSWORD_REUSE');
+        throw new AppError(
+            'New password must be different from your current password.',
+            400,
+            'PASSWORD_REUSE'
+        );
     }
 
-    // Step 3 — set new password and consume the token
-    user.password = newPassword; // pre-save hook hashes
+    // Set new password (pre-save hook hashes it) and consume the token
+    user.password = newPassword;
     await user.save();
 
-    await redis.pipeline()
-        .del(REDIS_KEY.pwReset(decoded.jti))
-        .del(REDIS_KEY.pwResetUser(userId))
-        .exec();
-
+    await redis.del(REDIS_KEY.pwReset(token));
     logger.info({ userId }, 'Password reset successfully');
     return true;
 }
@@ -685,7 +373,6 @@ export async function resetPassword(token, newPassword) {
 // ---------------------------------------------------------------------------
 // Change password (authenticated)
 // ---------------------------------------------------------------------------
-
 export async function changePassword(userId, currentPassword, newPassword) {
     const user = await User.findById(userId).select('+password');
     if (!user) {
@@ -699,7 +386,11 @@ export async function changePassword(userId, currentPassword, newPassword) {
 
     const isSamePassword = await user.comparePassword(newPassword);
     if (isSamePassword) {
-        throw new AppError('New password must be different from your current password.', 400, 'PASSWORD_REUSE');
+        throw new AppError(
+            'New password must be different from your current password.',
+            400,
+            'PASSWORD_REUSE'
+        );
     }
 
     user.password = newPassword; // pre-save hook hashes
@@ -710,90 +401,42 @@ export async function changePassword(userId, currentPassword, newPassword) {
 }
 
 // ---------------------------------------------------------------------------
-// Resend verification email
-// ---------------------------------------------------------------------------
-
-export async function resendVerificationEmail(email) {
-    const user = await User.findOne({ email: email.toLowerCase() });
-    if (!user) return; // Silent — enumeration prevention
-
-    if (user.emailVerified) return; // Silent — don't leak verified/unverified state
-
-    await _issueAndSendVerificationToken(user);
-    logger.info({ userId: user._id }, 'Verification email resent');
-}
-
-// ---------------------------------------------------------------------------
 // Private helpers
 // ---------------------------------------------------------------------------
 
 /**
- * Signs a new email verification JWT, writes its JTI to Redis, and fires the
- * verification email. If the user already has an outstanding token we delete
- * it first so only the latest link ever works.
- *
- * Returns the raw JWT string (used by registerUser for dev exposure).
+ * Generate a new email verification token, store it in Redis, and return it.
+ * Any previously issued token for this user is overwritten (old link invalidated).
  */
-async function _issueAndSendVerificationToken(user) {
-    const ttl = env.EMAIL_VERIFICATION_EXPIRY ?? 86400; // seconds, default 24 h
+async function _issueEmailVerificationToken(userId) {
+    const token = generateToken();
+    const redis = getRedisClient();
 
-    const jwt = signEmailVerifyToken(
-        { userId: user._id },
-        env.JWT_EMAIL_VERIFY_SECRET,
-        ttl
+    await redis.set(
+        REDIS_KEY.emailVerify(token),
+        userId.toString(),
+        'EX',
+        env.EMAIL_VERIFICATION_EXPIRY
     );
 
-    const redis = getRedisClient();
-    const pointerKey = REDIS_KEY.emailVerifyUser(user._id);
-
-    // If there's already a pending token for this user, invalidate it so old
-    // links in the user's inbox stop working the moment a new one is sent
-    const prevJti = await redis.get(pointerKey);
-    if (prevJti) {
-        await redis.del(REDIS_KEY.emailVerify(prevJti));
-    }
-
-    // Store JTI → userId (for verification lookup) and userId → JTI (for invalidation on resend)
-    await redis.pipeline()
-        .set(REDIS_KEY.emailVerify(jwt.jti), user._id.toString(), 'EX', ttl)
-        .set(pointerKey, jwt.jti, 'EX', ttl)
-        .exec();
-
-    emailService.sendVerificationEmail(user.email, jwt.token).catch((err) => {
-        logger.error({ err: err.message, userId: user._id }, 'Failed to send verification email');
-    });
-
-    return jwt.token;
+    return token;
 }
 
 /**
- * Signs a new password reset JWT, writes its JTI to Redis, and fires the
- * reset email. Any previous outstanding reset token for this user is
- * invalidated so only the most recently requested link works.
+ * Generate a new password reset token, store it in Redis, and return it.
+ * Any previously issued reset token for this user is implicitly superseded
+ * (only the latest token in Redis will match at reset time).
  */
-async function _issueAndSendPasswordResetToken(user) {
-    const ttl = 3600; // 1 hour
+async function _issuePasswordResetToken(userId) {
+    const token = generateToken();
+    const redis = getRedisClient();
 
-    const jwt = signPasswordResetToken(
-        { userId: user._id },
-        env.JWT_PASSWORD_RESET_SECRET,
-        ttl
+    await redis.set(
+        REDIS_KEY.pwReset(token),
+        userId.toString(),
+        'EX',
+        env.PASSWORD_RESET_EXPIRY
     );
 
-    const redis = getRedisClient();
-    const pointerKey = REDIS_KEY.pwResetUser(user._id);
-
-    const prevJti = await redis.get(pointerKey);
-    if (prevJti) {
-        await redis.del(REDIS_KEY.pwReset(prevJti));
-    }
-
-    await redis.pipeline()
-        .set(REDIS_KEY.pwReset(jwt.jti), user._id.toString(), 'EX', ttl)
-        .set(pointerKey, jwt.jti, 'EX', ttl)
-        .exec();
-
-    emailService.sendPasswordResetEmail(user.email, jwt.token).catch((err) => {
-        logger.error({ err: err.message, userId: user._id }, 'Failed to send password reset email');
-    });
+    return token;
 }
