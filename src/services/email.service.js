@@ -33,6 +33,8 @@ let transporter = null;
 /**
  * Sets up the Gmail SMTP connection using credentials from the environment.
  * Called automatically on the first email send — you don't call this directly.
+ * Also exported as initEmailTransporter() for explicit startup initialization
+ * in server.js.
  */
 function _initTransporter() {
   transporter = nodemailer.createTransport({
@@ -46,6 +48,22 @@ function _initTransporter() {
   });
 
   logger.info('Email transporter ready (Gmail SMTP)');
+}
+
+/**
+ * Public export of _initTransporter so server.js can call
+ * initEmailTransporter() during startup to eagerly warm up the
+ * SMTP connection before the first email is ever sent.
+ *
+ * It is safe to call this multiple times — if a transporter is
+ * already initialised it returns immediately without recreating it.
+ */
+export function initEmailTransporter() {
+  if (transporter) {
+    logger.debug('Email transporter already initialised — skipping');
+    return;
+  }
+  _initTransporter();
 }
 
 /**
