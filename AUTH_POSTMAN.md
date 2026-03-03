@@ -40,15 +40,15 @@ Content-Type: application/json
 ```json
 {
   "success": true,
-  "message": "Registration successful. Please check your email to verify your account.",
+  "message": "Registration successful. A 6-digit OTP has been sent to your email.",
   "data": {
     "userId": "65f1a2b3c4d5e6f7a8b9c0d1",
     "email": "vishal@example.com",
-    "verificationToken": "a3f8c2d1e4b5..."
+    "otp": "482931"
   }
 }
 ```
-> ⚠️ `verificationToken` is **only returned in development** (`NODE_ENV=development`). Copy this token — you need it for Step 2.
+> ⚠️ `otp` is **only returned in development** (`NODE_ENV=development`). In production, check your **Gmail inbox** for the OTP. The OTP expires in **10 minutes**.
 
 **❌ Error — Email already registered (409):**
 ```json
@@ -77,11 +77,11 @@ Content-Type: application/json
 
 ---
 
-### 2. Verify Email
+### 2. Verify Email (OTP)
 
 **`POST`** `http://localhost:3500/api/v1/auth/verify-email`
 
-> Use the `verificationToken` from Step 1 (returned in dev mode).
+> Send the **email** and the **6-digit OTP** you received. The OTP expires in 10 minutes and is single-use.
 
 **Headers:**
 ```
@@ -91,7 +91,8 @@ Content-Type: application/json
 **Body (raw JSON):**
 ```json
 {
-  "token": "a3f8c2d1e4b5a3f8c2d1e4b5a3f8c2d1e4b5a3f8c2d1e4b5a3f8c2d1e4b5a3f8"
+  "email": "vishal@example.com",
+  "otp": "482931"
 }
 ```
 
@@ -103,24 +104,38 @@ Content-Type: application/json
 }
 ```
 
-**❌ Error — Token invalid or expired (400):**
+**❌ Error — OTP invalid or expired (400):**
 ```json
 {
   "success": false,
   "error": {
-    "code": "INVALID_TOKEN",
-    "message": "Invalid or expired verification token. Please request a new one."
+    "code": "INVALID_OTP",
+    "message": "Invalid or expired OTP. Please request a new one."
+  }
+}
+```
+
+**❌ Error — Validation (400):**
+```json
+{
+  "success": false,
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Request validation failed.",
+    "details": [
+      { "field": "otp", "message": "OTP must be exactly 6 digits." }
+    ]
   }
 }
 ```
 
 ---
 
-### 3. Resend Verification Email
+### 3. Resend OTP
 
 **`POST`** `http://localhost:3500/api/v1/auth/resend-verification-email`
 
-> Use this if the verification token expired or email was lost.
+> Use this if the OTP expired or the email was lost. A new OTP is sent and the old one is immediately invalidated.
 
 **Headers:**
 ```
@@ -138,10 +153,10 @@ Content-Type: application/json
 ```json
 {
   "success": true,
-  "message": "If this email exists and is unverified, a new verification link has been sent."
+  "message": "If this email exists and is unverified, a new OTP has been sent."
 }
 ```
-> ℹ️ Always returns success — prevents email enumeration. Check your Redis for the new token or check the email inbox.
+> ℹ️ Always returns success — prevents email enumeration. Check your Gmail inbox or the server logs (dev mode prints OTP).
 
 ---
 
@@ -200,7 +215,7 @@ Content-Type: application/json
   "success": false,
   "error": {
     "code": "EMAIL_NOT_VERIFIED",
-    "message": "Please verify your email before logging in."
+    "message": "Please verify your email before logging in. Check your inbox for the OTP."
   }
 }
 ```
@@ -315,8 +330,7 @@ Content-Type: application/json
 ```
 > ⚠️ In development, find your reset token in Redis:  
 > `redis-cli KEYS "pwReset:*"` — each result looks like `pwReset:<64-char-hex-token>`.  
-> The **hex string after `pwReset:`** is the token to paste into Step 8's `token` field.  
-> (`GET <key>` returns the userId, not the token — the token is in the key name itself.)
+> The **hex string after `pwReset:`** is the token to paste into Step 8's `token` field.
 
 ---
 
@@ -426,15 +440,15 @@ Authorization: Bearer {{accessToken}}
 ## Testing Order (Happy Path)
 
 ```
-1. POST /register          → copy verificationToken from response
-2. POST /verify-email      → paste token, get success
-3. POST /login             → copy accessToken, refreshToken cookie set automatically
-4. POST /refresh-token     → get new accessToken (update variable)
-5. POST /change-password   → use current accessToken
-6. POST /forgot-password   → get reset token (check Redis or email)
-7. POST /reset-password    → paste token + new password
-8. POST /login             → login with new password
-9. POST /logout            → session fully cleared
+1. POST /register               → copy otp from response (dev) or check Gmail inbox
+2. POST /verify-email           → send { email, otp } → success
+3. POST /login                  → copy accessToken, refreshToken cookie set automatically
+4. POST /refresh-token          → get new accessToken (update variable)
+5. POST /change-password        → use current accessToken
+6. POST /forgot-password        → get reset token (check Redis or Gmail)
+7. POST /reset-password         → paste token + new password
+8. POST /login                  → login with new password
+9. POST /logout                 → session fully cleared
 ```
 
 ---
@@ -465,26 +479,33 @@ Account lockout: **5 failed logins → 15 minute lockout** (per email, tracked i
 
 ---
 
+## OTP Details
+
+| Property | Value |
+|---|---|
+| Length | 6 digits |
+| Expiry | 10 minutes |
+| Single-use | Yes — consumed on first successful verify |
+| Resend behaviour | New OTP immediately overwrites old (old one is invalid) |
+| Storage | Redis key `emailOtp:{userId}` |
+
+---
+
 ## How to Find Dev Tokens in Redis
 
-When SMTP is not configured, retrieve tokens directly from Redis:
+In development, OTPs and reset tokens are also printed in server logs.  
+You can also inspect them directly in Redis:
 
 ```bash
-# List all active verification tokens
-redis-cli KEYS "emailVerify:*"
-# Output example: emailVerify:a3f8c2d1e4b5...  ← the part after 'emailVerify:' IS the token
+# Find active OTP for a user (keyed by userId)
+redis-cli KEYS "emailOtp:*"
+redis-cli GET emailOtp:<userId>
 
 # List all active password reset tokens
 redis-cli KEYS "pwReset:*"
-# Output example: pwReset:b7e2a3d1c4f5... ← the part after 'pwReset:' IS the token
+# The part after 'pwReset:' IS the token to paste into /reset-password
 
-# Check what userId a token maps to
-redis-cli GET emailVerify:<paste-64-char-token-here>
-
-# Check how long a token has left to live (seconds)
-redis-cli TTL emailVerify:<paste-64-char-token-here>
+# Check TTL remaining (seconds)
+redis-cli TTL emailOtp:<userId>
+redis-cli TTL pwReset:<token>
 ```
-
-> 💡 **Token extraction tip**: The token is the 64-character hex string that forms the *key suffix*.
-> For example, if `KEYS "emailVerify:*"` returns `emailVerify:a3f8...e61b`,
-> then `a3f8...e61b` is the token to paste into the `token` field of `/verify-email`.

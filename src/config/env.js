@@ -72,19 +72,24 @@ const envSchema = z.object({
   // ─── CORS ─────────────────────────────────────────────────
   ALLOWED_ORIGINS: z.string().default('http://localhost:3000,http://localhost:5173'),
 
-  // ─── Email ────────────────────────────────────────────────
-  SMTP_HOST: z.string().default('smtp.ethereal.email'),
+  // ─── Email (Gmail SMTP) ──────────────────────────────────
+  SMTP_HOST: z.string().default('smtp.gmail.com'),
   SMTP_PORT: z.coerce.number().default(587),
   SMTP_SECURE: z.string().transform((v) => v === 'true').default('false'),
   SMTP_USER: z.string().default(''),
   SMTP_PASS: z.string().default(''),
   EMAIL_FROM: z.string().default('noreply@lexai.io'),
+  // Gmail credentials (maps to SMTP_USER / SMTP_PASS in the transporter)
+  MAIL_USER: z.string().default(''),
+  MAIL_PASS: z.string().default(''),
 
   // ─── Redis Token TTLs ─────────────────────────────────────
-  // How long email verification tokens live in Redis (seconds)
-  EMAIL_VERIFICATION_EXPIRY: z.coerce.number().default(86400), // 24 hours
+  // How long email OTP lives in Redis (seconds) — 10 minutes
+  EMAIL_VERIFICATION_EXPIRY: z.coerce.number().default(600),
   // How long password reset tokens live in Redis (seconds)
   PASSWORD_RESET_EXPIRY: z.coerce.number().default(3600), // 1 hour
+  // OTP-specific expiry (kept separate for clarity)
+  OTP_EXPIRY: z.coerce.number().default(600), // 10 minutes
 
   // ─── External APIs ───────────────────────────────────────
   REST_COUNTRIES_URL: z.string().url().default('https://restcountries.com/v3.1'),
