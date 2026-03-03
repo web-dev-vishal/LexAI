@@ -153,3 +153,11 @@ export const changePassword = Joi.object({
 }).messages({
     'any.invalid': 'New password must be different from your current password.',
 });
+
+// Parameter schema used for routes that take a JTI in the path
+export const jtiParam = Joi.object({
+    jti: Joi.string().uuid().required().messages({
+        'any.required': 'Session identifier (jti) is required.',
+        'string.uuid': 'Invalid session identifier format.',
+    }),
+});

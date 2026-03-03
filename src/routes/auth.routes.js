@@ -96,4 +96,30 @@ router.post(
     asyncWrapper(authController.changePassword)
 );
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Session management
+// ─────────────────────────────────────────────────────────────────────────────
+
+// list active sessions
+router.get(
+    '/sessions',
+    authenticate,
+    asyncWrapper(authController.getSessions)
+);
+
+// revoke one session by JTI
+router.delete(
+    '/sessions/:jti',
+    authenticate,
+    validate(authValidator.jtiParam, 'params'),
+    asyncWrapper(authController.revokeSession)
+);
+
+// revoke all sessions (log out everywhere)
+router.delete(
+    '/sessions',
+    authenticate,
+    asyncWrapper(authController.revokeAllSessions)
+);
+
 export default router;

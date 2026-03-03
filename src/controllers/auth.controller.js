@@ -23,6 +23,9 @@ import {
     forgotPassword as forgotPasswordService,
     resetPassword as resetPasswordService,
     changePassword as changePasswordService,
+    listRefreshTokens,
+    revokeRefreshToken,
+    revokeAllRefreshTokens,
     buildRefreshCookieOptions,
 } from '../services/auth.service.js';
 import { sendSuccess } from '../utils/apiResponse.js';
@@ -195,4 +198,29 @@ export async function changePassword(req, res) {
         req.body.newPassword
     );
     sendSuccess(res, { message: 'Password changed successfully.' });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/v1/auth/sessions  (requires valid access token)
+// ─────────────────────────────────────────────────────────────────────────────
+export async function getSessions(req, res) {
+    const sessions = await listRefreshTokens(req.user.userId);
+    sendSuccess(res, { data: { sessions } });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DELETE /api/v1/auth/sessions/:jti  (requires valid access token)
+// ─────────────────────────────────────────────────────────────────────────────
+export async function revokeSession(req, res) {
+    const { jti } = req.params;
+    await revokeRefreshToken(req.user.userId, jti);
+    sendSuccess(res, { message: 'Session revoked.' });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DELETE /api/v1/auth/sessions  (requires valid access token)
+// ─────────────────────────────────────────────────────────────────────────────
+export async function revokeAllSessions(req, res) {
+    await revokeAllRefreshTokens(req.user.userId);
+    sendSuccess(res, { message: 'All sessions revoked.' });
 }

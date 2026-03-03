@@ -29,6 +29,7 @@ import {
     signAccessToken,
     signRefreshToken,
     verifyToken as verifyJwt,
+    decodeToken,
     getRemainingTTL,
 } from '../utils/tokenHelper.js';
 import * as emailService from './email.service.js';
@@ -57,6 +58,10 @@ const REDIS_KEY = {
 
     // Revoked JWT IDs — checked on every authenticated request
     blacklist: (jti) => `blacklist:${jti}`,
+
+    // Active refresh token metadata
+    refreshToken: (jti) => `refreshToken:${jti}`,        // value=userId, TTL=token lifetime
+    userRefreshSet: (userId) => `refreshTokens:${userId}`, // set of JTIs for a user
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -92,6 +97,106 @@ export function buildRefreshCookieOptions() {
         maxAge: env.JWT_REFRESH_COOKIE_MAX_AGE_MS,       // 7 days in ms
         path: '/',
     };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Session / refresh‑token helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Store an issued refresh token JTI in Redis and add it to the user's set.
+ * Also creates a small key for the token itself so we can lookup TTL later.
+ */
+async function _storeRefreshToken(userId, jti, exp) {
+    const redis = getRedisClient();
+    const ttl = getRemainingTTL(exp);
+
+    // pipeline to reduce round trips
+    const keyUserSet = REDIS_KEY.userRefreshSet(userId.toString());
+    const keyToken = REDIS_KEY.refreshToken(jti);
+    const pipeline = redis.pipeline();
+    pipeline.set(keyToken, userId.toString(), 'EX', ttl);
+    pipeline.sadd(keyUserSet, jti);
+    // ensure the set expires roughly when the latest token expires
+    pipeline.expire(keyUserSet, ttl);
+    await pipeline.exec();
+}
+
+/**
+ * Remove a specific refresh token from the user's set and delete its metadata key.
+ */
+async function _removeRefreshToken(userId, jti) {
+    const redis = getRedisClient();
+    const keyUserSet = REDIS_KEY.userRefreshSet(userId.toString());
+    const keyToken = REDIS_KEY.refreshToken(jti);
+    await redis.pipeline().srem(keyUserSet, jti).del(keyToken).exec();
+}
+
+/**
+ * Remove all stored refresh tokens for a user; returns the list of JTIs
+ * that were removed so the caller can blacklist them if desired.
+ */
+async function _removeAllRefreshTokens(userId) {
+    const redis = getRedisClient();
+    const keyUserSet = REDIS_KEY.userRefreshSet(userId.toString());
+    const jtis = await redis.smembers(keyUserSet);
+    if (jtis.length > 0) {
+        const pipeline = redis.pipeline();
+        for (const jti of jtis) {
+            pipeline.del(REDIS_KEY.refreshToken(jti));
+        }
+        pipeline.del(keyUserSet);
+        await pipeline.exec();
+    }
+    return jtis;
+}
+
+// expose some helpers for controllers to call
+export async function listRefreshTokens(userId) {
+    const redis = getRedisClient();
+    const keyUserSet = REDIS_KEY.userRefreshSet(userId.toString());
+    const jtis = await redis.smembers(keyUserSet);
+
+    // convert to objects with remaining ttl for UX
+    const result = [];
+    for (const jti of jtis) {
+        const ttl = await redis.ttl(REDIS_KEY.refreshToken(jti));
+        result.push({ jti, expiresIn: ttl });
+    }
+    return result;
+}
+
+export async function revokeRefreshToken(userId, jti) {
+    const redis = getRedisClient();
+    const keyToken = REDIS_KEY.refreshToken(jti);
+    const owner = await redis.get(keyToken);
+    if (!owner) {
+        throw new AppError('Session not found.', 404, 'NOT_FOUND');
+    }
+    if (owner !== userId.toString()) {
+        throw new AppError('Not authorized to revoke this session.', 403, 'FORBIDDEN');
+    }
+
+    const ttl = await redis.ttl(keyToken);
+    if (ttl > 0) {
+        await redis.set(REDIS_KEY.blacklist(jti), '1', 'EX', ttl);
+    }
+
+    await _removeRefreshToken(userId, jti);
+}
+
+export async function revokeAllRefreshTokens(userId) {
+    const redis = getRedisClient();
+    const jtis = await _removeAllRefreshTokens(userId);
+    if (jtis.length === 0) return;
+
+    const pipeline = redis.pipeline();
+    for (const jti of jtis) {
+        // attempt to get remaining ttl from the metadata key; if it's gone assume expired
+        const ttl = await redis.ttl(REDIS_KEY.refreshToken(jti));
+        if (ttl > 0) pipeline.set(REDIS_KEY.blacklist(jti), '1', 'EX', ttl);
+    }
+    await pipeline.exec();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -273,6 +378,12 @@ export async function loginUser({ email, password }) {
     const access = signAccessToken(accessPayload, env.JWT_ACCESS_SECRET, env.JWT_ACCESS_EXPIRY);
     const refresh = signRefreshToken({ userId: user._id }, env.JWT_REFRESH_SECRET, env.JWT_REFRESH_EXPIRY);
 
+    // Persist the refresh token jti so we can manage sessions later
+    const decodedRefresh = decodeToken(refresh.token);
+    if (decodedRefresh && decodedRefresh.exp) {
+        await _storeRefreshToken(user._id, refresh.jti, decodedRefresh.exp);
+    }
+
     // Record last login time (non-blocking save)
     user.lastLoginAt = new Date();
     await user.save();
@@ -325,10 +436,19 @@ export async function refreshAccessToken(refreshTokenStr) {
         throw new AppError('Email not verified.', 403, 'EMAIL_NOT_VERIFIED');
     }
 
+    // remove the old refresh jti from the session set (it will be gone anyway after blacklist TTL)
+    await _removeRefreshToken(decoded.userId, decoded.jti);
+
     // Issue a fresh pair of tokens
     const accessPayload = { userId: user._id, orgId: user.organization, role: user.role };
     const newAccess = signAccessToken(accessPayload, env.JWT_ACCESS_SECRET, env.JWT_ACCESS_EXPIRY);
     const newRefresh = signRefreshToken({ userId: user._id }, env.JWT_REFRESH_SECRET, env.JWT_REFRESH_EXPIRY);
+
+    // store the new refresh token JTI
+    const decodedNew = decodeToken(newRefresh.token);
+    if (decodedNew && decodedNew.exp) {
+        await _storeRefreshToken(user._id, newRefresh.jti, decodedNew.exp);
+    }
 
     return { accessToken: newAccess.token, refreshToken: newRefresh.token };
 }
@@ -355,6 +475,9 @@ export async function logoutUser(jti, exp, refreshTokenStr) {
             if (refreshTTL > 0) {
                 pipeline.set(REDIS_KEY.blacklist(decoded.jti), '1', 'EX', refreshTTL);
             }
+
+            // remove from user's session set if we know owner
+            await _removeRefreshToken(decoded.userId, decoded.jti);
         } catch {
             // Token is already expired or was tampered with — nothing to blacklist
             logger.debug('Refresh token invalid at logout; skipping blacklist');
